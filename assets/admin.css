@@ -1,0 +1,25 @@
+.yy-dmm-admin .form-table th {
+	width: 220px;
+}
+
+.yy-dmm-admin .regular-text {
+	max-width: 520px;
+	width: 100%;
+}
+
+.yy-dmm-run-form {
+	margin-top: 20px;
+}
+
+.yy-dmm-log-table td {
+	white-space: pre-wrap;
+	vertical-align: top;
+}
+
+.yy-dmm-guide {
+	background: #fff;
+	border: 1px solid #dcdcde;
+	margin-top: 16px;
+	max-width: 780px;
+	padding: 18px 24px 18px 42px;
+}
