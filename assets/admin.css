@@ -30,6 +30,152 @@
 	margin: 0 18px 8px 0;
 }
 
+.yy-dmm-token-grid {
+	display: grid;
+	gap: 8px;
+	grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+	max-width: 960px;
+}
+
+.yy-dmm-token-item {
+	align-items: center;
+	background: #fff;
+	border: 1px solid #dcdcde;
+	display: flex;
+	gap: 10px;
+	justify-content: space-between;
+	min-height: 38px;
+	padding: 8px 10px;
+}
+
+.yy-dmm-token-item > div {
+	min-width: 0;
+}
+
+.yy-dmm-token-item code {
+	display: inline-block;
+	margin-right: 8px;
+	min-width: 130px;
+	overflow-wrap: anywhere;
+}
+
+.yy-dmm-token-item span {
+	color: #50575e;
+}
+
+.yy-dmm-copy-token {
+	flex: 0 0 auto;
+}
+
+.yy-dmm-taxonomy-note {
+	background: #fff;
+	border-left: 4px solid #72aee6;
+	margin: 14px 0 18px;
+	max-width: 860px;
+	padding: 10px 12px;
+}
+
+.yy-dmm-taxonomy-table {
+	max-width: 760px;
+}
+
+.yy-dmm-taxonomy-table th,
+.yy-dmm-taxonomy-table td {
+	vertical-align: middle;
+}
+
+.yy-dmm-taxonomy-table thead th {
+	white-space: nowrap;
+}
+
+.yy-dmm-taxonomy-table tbody th {
+	padding-left: 16px;
+	width: 140px;
+}
+
+.yy-dmm-taxonomy-table thead th:first-child {
+	padding-left: 16px;
+}
+
+.yy-dmm-taxonomy-table td {
+	width: 150px;
+}
+
+.yy-dmm-taxonomy-table select {
+	min-width: 96px;
+}
+
+.yy-dmm-taxonomy-table-tags {
+	max-width: 560px;
+}
+
+.yy-dmm-delete-note {
+	background: #fff;
+	border-left: 4px solid #d63638;
+	margin: 14px 0 18px;
+	max-width: 960px;
+	padding: 10px 12px;
+}
+
+.yy-dmm-delete-table {
+	max-width: 1080px;
+}
+
+.yy-dmm-delete-table th,
+.yy-dmm-delete-table td {
+	vertical-align: middle;
+}
+
+.yy-dmm-delete-table th:first-child {
+	width: 180px;
+}
+
+.yy-dmm-delete-table td:last-child {
+	width: 360px;
+}
+
+.yy-dmm-delete-form {
+	align-items: center;
+	display: flex;
+	gap: 8px;
+}
+
+.yy-dmm-delete-form input[type="text"] {
+	width: 110px;
+}
+
+.yy-dmm-danger-button {
+	border-color: #d63638 !important;
+	color: #b32d2e !important;
+}
+
+.yy-dmm-danger-button:hover,
+.yy-dmm-danger-button:focus {
+	background: #d63638 !important;
+	border-color: #d63638 !important;
+	color: #fff !important;
+}
+
+.yy-dmm-delete-all-row th,
+.yy-dmm-delete-all-row td {
+	background: #fcf0f1;
+}
+
+@media screen and (max-width: 782px) {
+	.yy-dmm-token-grid {
+		grid-template-columns: 1fr;
+	}
+
+	.yy-dmm-token-item {
+		align-items: flex-start;
+		flex-direction: column;
+	}
+
+	.yy-dmm-token-item code {
+		min-width: 0;
+	}
+}
+
 .yy-dmm-order-table {
 	max-width: 620px;
 }

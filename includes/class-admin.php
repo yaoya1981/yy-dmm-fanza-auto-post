@@ -15,6 +15,7 @@ class YY_DMM_Auto_Post_Admin {
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_assets' ) );
 		add_action( 'admin_post_yy_dmm_auto_post_save_settings', array( $this, 'handle_save_settings' ) );
 		add_action( 'admin_post_yy_dmm_auto_post_run_manual', array( $this, 'handle_manual_run' ) );
+		add_action( 'admin_post_yy_dmm_auto_post_delete_content', array( $this, 'handle_delete_content' ) );
 	}
 
 	public function add_menu() {
@@ -23,15 +24,16 @@ class YY_DMM_Auto_Post_Admin {
 			'DMM/FANZA自動投稿',
 			'manage_options',
 			'yy-dmm-fanza-auto-post',
-			array( $this, 'render_settings_page' ),
+			array( $this, 'render_guide_page' ),
 			'dashicons-update-alt',
 			58
 		);
 
-		add_submenu_page( 'yy-dmm-fanza-auto-post', '設定', '設定', 'manage_options', 'yy-dmm-fanza-auto-post', array( $this, 'render_settings_page' ) );
+		add_submenu_page( 'yy-dmm-fanza-auto-post', '使い方', '使い方', 'manage_options', 'yy-dmm-fanza-auto-post', array( $this, 'render_guide_page' ) );
 		add_submenu_page( 'yy-dmm-fanza-auto-post', '手動実行', '手動実行', 'manage_options', 'yy-dmm-fanza-auto-post-run', array( $this, 'render_manual_page' ) );
+		add_submenu_page( 'yy-dmm-fanza-auto-post', '設定', '設定', 'manage_options', 'yy-dmm-fanza-auto-post-settings', array( $this, 'render_settings_page' ) );
 		add_submenu_page( 'yy-dmm-fanza-auto-post', '投稿ログ', '投稿ログ', 'manage_options', 'yy-dmm-fanza-auto-post-logs', array( $this, 'render_logs_page' ) );
-		add_submenu_page( 'yy-dmm-fanza-auto-post', '使い方', '使い方', 'manage_options', 'yy-dmm-fanza-auto-post-guide', array( $this, 'render_guide_page' ) );
+		add_submenu_page( 'yy-dmm-fanza-auto-post', 'クリーンアップ', 'クリーンアップ', 'manage_options', 'yy-dmm-fanza-auto-post-cleanup', array( $this, 'render_cleanup_page' ) );
 	}
 
 	public function enqueue_assets() {
@@ -56,7 +58,7 @@ class YY_DMM_Auto_Post_Admin {
 		YY_DMM_Auto_Post_Settings::update( $settings );
 		YY_DMM_Auto_Post_Cron::reschedule();
 
-		wp_safe_redirect( admin_url( 'admin.php?page=yy-dmm-fanza-auto-post&settings-updated=1&tab=' . $this->normalize_settings_tab( $tab ) ) );
+		wp_safe_redirect( admin_url( 'admin.php?page=yy-dmm-fanza-auto-post-settings&settings-updated=1&tab=' . $this->normalize_settings_tab( $tab ) ) );
 		exit;
 	}
 
@@ -77,6 +79,40 @@ class YY_DMM_Auto_Post_Admin {
 		exit;
 	}
 
+	public function handle_delete_content() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( '権限がありません。', 'yy-dmm-fanza-auto-post' ) );
+		}
+
+		check_admin_referer( 'yy_dmm_auto_post_delete_content' );
+
+		$delete_type = isset( $_POST['yy_dmm_delete_type'] ) ? sanitize_key( wp_unslash( $_POST['yy_dmm_delete_type'] ) ) : '';
+		$confirm = isset( $_POST['yy_dmm_delete_confirm'] ) ? sanitize_text_field( wp_unslash( $_POST['yy_dmm_delete_confirm'] ) ) : '';
+		$actions = $this->delete_actions();
+
+		if ( ! isset( $actions[ $delete_type ] ) ) {
+			$result = array(
+				'label'  => 'クリーンアップ',
+				'errors' => array( '削除対象が正しくありません。' ),
+			);
+		} elseif ( 'all' === $delete_type && '全削除' !== $confirm ) {
+			$result = array(
+				'label'  => $actions[ $delete_type ]['label'],
+				'errors' => array( '全削除を実行するには、確認欄に「全削除」と入力してください。' ),
+			);
+		} else {
+			if ( function_exists( 'set_time_limit' ) ) {
+				@set_time_limit( 600 );
+			}
+
+			$result = $this->run_delete_action( $delete_type );
+		}
+
+		set_transient( 'yy_dmm_auto_post_delete_result_' . get_current_user_id(), $result, 10 * MINUTE_IN_SECONDS );
+		wp_safe_redirect( admin_url( 'admin.php?page=yy-dmm-fanza-auto-post-cleanup&cleanup-complete=1' ) );
+		exit;
+	}
+
 	public function render_settings_page() {
 		$this->guard();
 		$settings = YY_DMM_Auto_Post_Settings::get();
@@ -91,7 +127,7 @@ class YY_DMM_Auto_Post_Admin {
 
 			<nav class="nav-tab-wrapper yy-dmm-settings-tabs" aria-label="設定タブ">
 				<?php foreach ( $tabs as $key => $label ) : ?>
-					<a class="nav-tab <?php echo $active === $key ? 'nav-tab-active' : ''; ?>" href="<?php echo esc_url( admin_url( 'admin.php?page=yy-dmm-fanza-auto-post&tab=' . $key ) ); ?>">
+					<a class="nav-tab <?php echo $active === $key ? 'nav-tab-active' : ''; ?>" href="<?php echo esc_url( admin_url( 'admin.php?page=yy-dmm-fanza-auto-post-settings&tab=' . $key ) ); ?>">
 						<?php echo esc_html( $label ); ?>
 					</a>
 				<?php endforeach; ?>
@@ -173,17 +209,31 @@ class YY_DMM_Auto_Post_Admin {
 		<?php
 	}
 
+	public function render_cleanup_page() {
+		$this->guard();
+		?>
+		<div class="wrap yy-dmm-admin">
+			<h1>DMM/FANZA自動投稿 クリーンアップ</h1>
+			<?php $this->render_delete_settings_fields(); ?>
+		</div>
+		<?php
+	}
+
 	public function render_guide_page() {
 		$this->guard();
 		?>
 		<div class="wrap yy-dmm-admin">
 			<h1>DMM/FANZA自動投稿 使い方</h1>
 			<ol class="yy-dmm-guide">
-				<li>DMM/FANZA Affiliate API IDとアフィリエイトIDを設定します。</li>
-				<li>検索キーワード、floor、取得件数、投稿ステータスを設定します。</li>
-				<li>必要に応じてカテゴリ作成、タグ作成、自動実行を有効にします。</li>
-				<li>手動実行画面で「今すぐ取得して投稿する」を押すと、未投稿の商品だけを投稿します。</li>
-				<li>サンプル画像とサンプル動画はAPI URLを本文内で直接表示し、保存する画像はアイキャッチのみです。</li>
+				<li>左メニューは「使い方」「手動実行」「設定」「投稿ログ」「クリーンアップ」の順に並んでいます。</li>
+				<li>設定画面の「API設定」で、DMM/FANZA Affiliate API ID、アフィリエイトID、site、service、floor、keyword、sort、hitsを設定します。</li>
+				<li>「投稿設定」で投稿ステータス、発売日・配信日との日付同期、1回の最大投稿数、重複投稿防止、自動実行、ログ保存を設定します。</li>
+				<li>「タイトル・本文設定」で投稿タイトル形式、使用可能フィールドのコピー、本文に表示する項目、作品情報テーブルの表示項目・表示順・リンク有無を調整します。</li>
+				<li>「動画・画像設定」でサンプル動画サイズ、アイキャッチ画像、サンプル画像サイズ、掲載枚数、続きを見るボタンを設定します。</li>
+				<li>「カテゴリー・タグ」でカテゴリ作成、親カテゴリID、ジャンル・メーカー・レーベルごとの使用有無、親カテゴリ有無、スラッグのID/名前を設定します。同名の項目がある場合はIDスラッグを推奨します。</li>
+				<li>手動実行画面で「今すぐ取得して投稿する」を押すと、現在の設定で商品を取得して投稿します。重複投稿防止がONの場合、投稿済みの品番はスキップします。</li>
+				<li>投稿ログ画面で取得件数、投稿件数、新規、更新、スキップ、エラーを確認します。</li>
+				<li>クリーンアップ画面ではキャッシュクリア、カテゴリーなし投稿修復、投稿記事・固定記事・カテゴリー・タグ・メディアの全削除、全削除を実行できます。削除はゴミ箱に入らず完全削除されるため、実行前にバックアップを確認してください。</li>
 			</ol>
 		</div>
 		<?php
@@ -312,7 +362,8 @@ class YY_DMM_Auto_Post_Admin {
 		<div class="yy-dmm-settings-panel">
 			<h2>タイトル設定</h2>
 			<table class="form-table" role="presentation">
-				<?php $this->text_row( '投稿タイトル形式', 'title_template', $settings['title_template'], '{title}｜{label}', '使用可能: {title}, {content_id}, {label}, {maker}, {date}' ); ?>
+				<?php $this->text_row( '投稿タイトル形式', 'title_template', $settings['title_template'], '{title}｜{label}', '下のフィールドを組み合わせて使用できます。' ); ?>
+				<?php $this->title_template_tokens_row(); ?>
 			</table>
 
 			<h2>本文設定</h2>
@@ -322,6 +373,7 @@ class YY_DMM_Auto_Post_Admin {
 
 			<h2>作品情報テーブル</h2>
 			<table class="form-table" role="presentation">
+				<?php $this->checkbox_row( 'リンクを付ける', 'product_info_link_terms', $settings['product_info_link_terms'], 'レーベル、メーカー、ジャンルに対応するカテゴリーまたはタグがある場合はリンク形式で表示します。' ); ?>
 				<?php $this->ordered_checkbox_group_row( '表示する項目', 'product_info_fields', 'product_info_field_order', $settings['product_info_fields'], $settings['product_info_field_order'], $this->product_info_field_labels() ); ?>
 			</table>
 		</div>
@@ -355,36 +407,460 @@ class YY_DMM_Auto_Post_Admin {
 	private function render_taxonomy_settings_fields( $settings ) {
 		?>
 		<div class="yy-dmm-settings-panel">
-			<h2>共通設定</h2>
-			<table class="form-table" role="presentation">
-				<?php $this->select_row( 'スラッグ', 'term_slug_source', $settings['term_slug_source'], array( 'id' => 'IDを使用', 'name' => '名前を使用' ), 'カテゴリーとタグの両方に適用します。' ); ?>
-			</table>
+			<p class="description yy-dmm-taxonomy-note">複数の項目を同時に使う場合、名前を使用すると同名のジャンル・メーカー・レーベルでスラッグが競合することがあります。競合を避けたい場合はIDを使用してください。</p>
 
 			<h2>カテゴリー設定</h2>
 			<table class="form-table" role="presentation">
 				<?php $this->checkbox_row( 'カテゴリ作成', 'create_categories', $settings['create_categories'] ); ?>
-				<?php $this->number_row( '親カテゴリID', 'parent_category_id', $settings['parent_category_id'], 0, 999999 ); ?>
-				<?php $this->checkbox_row( '種類別の親カテゴリ作成', 'create_parent_categories', $settings['create_parent_categories'], 'ONの場合は「ジャンル」「メーカー」などの親カテゴリを作り、その下に各カテゴリを作成します。親カテゴリIDを指定した場合は、その下に作成します。' ); ?>
-				<?php $this->iteminfo_checkbox_group_row( '使用する項目', 'category_iteminfo_keys', $settings['category_iteminfo_keys'] ); ?>
+				<?php $this->number_row( '親カテゴリID', 'parent_category_id', $settings['parent_category_id'], 0, 999999, '0の場合はトップ階層に作成します。' ); ?>
+				<?php $this->category_taxonomy_matrix_row( '項目別設定', $settings ); ?>
 			</table>
 
 			<h2>タグ設定</h2>
 			<table class="form-table" role="presentation">
 				<?php $this->checkbox_row( 'タグ作成', 'create_tags', $settings['create_tags'] ); ?>
-				<?php $this->iteminfo_checkbox_group_row( '使用する項目', 'tag_iteminfo_keys', $settings['tag_iteminfo_keys'] ); ?>
+				<?php $this->tag_taxonomy_matrix_row( '項目別設定', $settings ); ?>
 			</table>
 		</div>
 		<?php
 	}
 
+	private function render_delete_settings_fields() {
+		$result = get_transient( 'yy_dmm_auto_post_delete_result_' . get_current_user_id() );
+		if ( false !== $result ) {
+			delete_transient( 'yy_dmm_auto_post_delete_result_' . get_current_user_id() );
+		}
+		$actions = $this->delete_actions();
+		?>
+		<div class="yy-dmm-settings-panel yy-dmm-delete-panel">
+			<?php $this->render_delete_result_notice( $result ); ?>
+			<p class="description yy-dmm-delete-note">この画面のクリーンアップはゴミ箱へ移動せず完全削除します。実行前にバックアップを確認してください。</p>
+			<table class="widefat striped yy-dmm-delete-table">
+				<thead>
+					<tr>
+						<th>操作</th>
+						<th>対象</th>
+						<th>実行</th>
+					</tr>
+				</thead>
+				<tbody>
+					<?php foreach ( $actions as $action_key => $action ) : ?>
+						<tr class="<?php echo 'all' === $action_key ? 'yy-dmm-delete-all-row' : ''; ?>">
+							<th scope="row"><?php echo esc_html( $action['label'] ); ?></th>
+							<td><?php echo esc_html( $action['description'] ); ?></td>
+							<td>
+								<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="yy-dmm-delete-form">
+									<input type="hidden" name="action" value="yy_dmm_auto_post_delete_content">
+									<input type="hidden" name="yy_dmm_delete_type" value="<?php echo esc_attr( $action_key ); ?>">
+									<?php wp_nonce_field( 'yy_dmm_auto_post_delete_content' ); ?>
+									<?php if ( 'all' === $action_key ) : ?>
+										<input type="text" name="yy_dmm_delete_confirm" value="" placeholder="全削除" aria-label="全削除の確認入力">
+									<?php endif; ?>
+									<button type="submit" class="button yy-dmm-danger-button" onclick="return confirm('<?php echo esc_js( $action['confirm'] ); ?>');"><?php echo esc_html( $action['button'] ); ?></button>
+								</form>
+							</td>
+						</tr>
+					<?php endforeach; ?>
+				</tbody>
+			</table>
+			<p class="description">全削除のみ、確認欄に「全削除」と入力してから実行してください。カテゴリー全削除ではWordPressの既定カテゴリーを削除できない場合があります。</p>
+		</div>
+		<?php
+	}
+
+	private function render_delete_result_notice( $result ) {
+		if ( ! is_array( $result ) ) {
+			return;
+		}
+
+		$errors = isset( $result['errors'] ) && is_array( $result['errors'] ) ? $result['errors'] : array();
+		$counts = isset( $result['counts'] ) && is_array( $result['counts'] ) ? $result['counts'] : array();
+		$notice_class = empty( $errors ) ? 'notice-success' : 'notice-error';
+		?>
+		<div class="notice <?php echo esc_attr( $notice_class ); ?> is-dismissible">
+			<p><strong><?php echo esc_html( $result['label'] ?? 'クリーンアップ' ); ?></strong></p>
+			<?php if ( $counts ) : ?>
+				<ul>
+					<?php foreach ( $counts as $label => $count ) : ?>
+						<li>
+							<?php echo esc_html( $label ); ?>:
+							<?php if ( isset( $count['cleared'] ) ) : ?>
+								クリア <?php echo esc_html( absint( $count['cleared'] ) ); ?>
+							<?php elseif ( isset( $count['repaired'] ) && ! isset( $count['deleted'] ) ) : ?>
+								修復 <?php echo esc_html( absint( $count['repaired'] ) ); ?>
+							<?php else : ?>
+								削除 <?php echo esc_html( absint( $count['deleted'] ?? 0 ) ); ?>
+							<?php endif; ?>
+							<?php if ( ! empty( $count['skipped'] ) ) : ?>
+								/ スキップ <?php echo esc_html( absint( $count['skipped'] ) ); ?>
+							<?php endif; ?>
+							<?php if ( isset( $count['deleted'] ) && ! empty( $count['repaired'] ) ) : ?>
+								/ 修復 <?php echo esc_html( absint( $count['repaired'] ) ); ?>
+							<?php endif; ?>
+							<?php if ( ! empty( $count['failed'] ) ) : ?>
+								/ 失敗 <?php echo esc_html( absint( $count['failed'] ) ); ?>
+							<?php endif; ?>
+						</li>
+					<?php endforeach; ?>
+				</ul>
+			<?php endif; ?>
+			<?php if ( $errors ) : ?>
+				<ul>
+					<?php foreach ( $errors as $error ) : ?>
+						<li><?php echo esc_html( $error ); ?></li>
+					<?php endforeach; ?>
+				</ul>
+			<?php endif; ?>
+		</div>
+		<?php
+	}
+
+	private function delete_actions() {
+		return array(
+			'cache'      => array(
+				'label'       => 'キャッシュクリア',
+				'description' => 'WordPressキャッシュ、一時データ、リライトルールをクリアします。',
+				'button'      => 'キャッシュをクリア',
+				'confirm'     => 'キャッシュをクリアします。実行しますか？',
+			),
+			'repair_categories' => array(
+				'label'       => 'カテゴリーなし投稿修復',
+				'description' => 'カテゴリーが付いていない投稿へWordPressの既定カテゴリーを設定します。',
+				'button'      => 'カテゴリーを修復',
+				'confirm'     => 'カテゴリーが付いていない投稿へ既定カテゴリーを設定します。実行しますか？',
+			),
+			'posts'      => array(
+				'label'       => '投稿記事全削除',
+				'description' => '投稿タイプ「post」の記事をすべて完全削除します。',
+				'button'      => '投稿記事を削除',
+				'confirm'     => '投稿記事をすべて完全削除します。実行しますか？',
+			),
+			'pages'      => array(
+				'label'       => '固定記事全削除',
+				'description' => '固定ページをすべて完全削除します。',
+				'button'      => '固定記事を削除',
+				'confirm'     => '固定ページをすべて完全削除します。実行しますか？',
+			),
+			'categories' => array(
+				'label'       => 'カテゴリー全削除',
+				'description' => 'カテゴリーをすべて削除します。既定カテゴリーは削除できない場合があります。',
+				'button'      => 'カテゴリーを削除',
+				'confirm'     => 'カテゴリーをすべて削除します。実行しますか？',
+			),
+			'tags'       => array(
+				'label'       => 'タグ全削除',
+				'description' => '投稿タグをすべて削除します。',
+				'button'      => 'タグを削除',
+				'confirm'     => 'タグをすべて削除します。実行しますか？',
+			),
+			'media'      => array(
+				'label'       => 'メディア全削除',
+				'description' => 'メディアライブラリの添付ファイルをすべて完全削除します。',
+				'button'      => 'メディアを削除',
+				'confirm'     => 'メディアをすべて完全削除します。実行しますか？',
+			),
+			'all'        => array(
+				'label'       => '全削除',
+				'description' => '投稿記事、固定記事、カテゴリー、タグ、メディアをすべて削除します。',
+				'button'      => '全削除',
+				'confirm'     => '投稿記事、固定記事、カテゴリー、タグ、メディアをすべて削除します。本当に実行しますか？',
+			),
+		);
+	}
+
+	private function run_delete_action( $delete_type ) {
+		$actions = $this->delete_actions();
+		$result = array(
+			'label'  => $actions[ $delete_type ]['label'] ?? 'クリーンアップ',
+			'counts' => array(),
+			'errors' => array(),
+		);
+		$targets = 'all' === $delete_type ? array( 'posts', 'pages', 'categories', 'tags', 'media' ) : array( $delete_type );
+
+		foreach ( $targets as $target ) {
+			$target_result = $this->delete_content_target( $target );
+			$result['counts'][ $target_result['label'] ] = $target_result['count'];
+			if ( ! empty( $target_result['errors'] ) ) {
+				$result['errors'] = array_merge( $result['errors'], $target_result['errors'] );
+			}
+		}
+
+		return $result;
+	}
+
+	private function delete_content_target( $target ) {
+		if ( 'cache' === $target ) {
+			return $this->clear_cache();
+		}
+
+		if ( 'posts' === $target ) {
+			return $this->delete_posts_by_type( 'post', '投稿記事' );
+		}
+
+		if ( 'repair_categories' === $target ) {
+			$repair_result = $this->repair_posts_without_categories();
+			return array(
+				'label'  => 'カテゴリーなし投稿',
+				'count'  => array(
+					'repaired' => $repair_result['repaired'],
+					'failed'   => $repair_result['failed'],
+					'skipped'  => 0,
+				),
+				'errors' => $repair_result['errors'],
+			);
+		}
+
+		if ( 'pages' === $target ) {
+			return $this->delete_posts_by_type( 'page', '固定記事' );
+		}
+
+		if ( 'media' === $target ) {
+			return $this->delete_posts_by_type( 'attachment', 'メディア' );
+		}
+
+		if ( 'categories' === $target ) {
+			return $this->delete_terms_by_taxonomy( 'category', 'カテゴリー' );
+		}
+
+		if ( 'tags' === $target ) {
+			return $this->delete_terms_by_taxonomy( 'post_tag', 'タグ' );
+		}
+
+		return array(
+			'label'  => '不明',
+			'count'  => array( 'deleted' => 0, 'failed' => 0, 'skipped' => 0 ),
+			'errors' => array( '削除対象が正しくありません。' ),
+		);
+	}
+
+	private function clear_cache() {
+		$count = array( 'cleared' => 0, 'failed' => 0, 'skipped' => 0 );
+		$errors = array();
+
+		if ( function_exists( 'wp_cache_flush' ) ) {
+			$flushed = wp_cache_flush();
+			if ( false === $flushed ) {
+				$count['failed']++;
+				$errors[] = 'WordPressオブジェクトキャッシュをクリアできませんでした。';
+			} else {
+				$count['cleared']++;
+			}
+		} else {
+			$count['skipped']++;
+		}
+
+		if ( function_exists( 'delete_expired_transients' ) ) {
+			delete_expired_transients();
+			$count['cleared']++;
+		}
+
+		$transient_count = $this->delete_plugin_transients();
+		if ( $transient_count > 0 ) {
+			$count['cleared'] += $transient_count;
+		}
+
+		flush_rewrite_rules( false );
+		$count['cleared']++;
+
+		return array(
+			'label'  => 'キャッシュ',
+			'count'  => $count,
+			'errors' => $errors,
+		);
+	}
+
+	private function delete_plugin_transients() {
+		global $wpdb;
+
+		$deleted = 0;
+		$prefixes = array(
+			'_transient_yy_dmm_auto_post_',
+			'_transient_timeout_yy_dmm_auto_post_',
+			'_site_transient_yy_dmm_auto_post_',
+			'_site_transient_timeout_yy_dmm_auto_post_',
+		);
+
+		foreach ( $prefixes as $prefix ) {
+			$like = $wpdb->esc_like( $prefix ) . '%';
+			$result = $wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s", $like ) );
+			if ( false !== $result ) {
+				$deleted += absint( $result );
+			}
+		}
+
+		return $deleted;
+	}
+
+	private function delete_posts_by_type( $post_type, $label ) {
+		$count = array( 'deleted' => 0, 'failed' => 0, 'skipped' => 0 );
+		$errors = array();
+		$failed_ids = array();
+		$post_statuses = array_values( get_post_stati( array(), 'names' ) );
+
+		do {
+			$args = array(
+				'post_type'        => $post_type,
+				'post_status'      => $post_statuses,
+				'posts_per_page'   => 100,
+				'fields'           => 'ids',
+				'orderby'          => 'ID',
+				'order'            => 'ASC',
+				'no_found_rows'    => true,
+				'suppress_filters' => true,
+			);
+			if ( $failed_ids ) {
+				$args['post__not_in'] = $failed_ids;
+			}
+
+			$ids = get_posts( $args );
+			foreach ( $ids as $post_id ) {
+				$post_id = absint( $post_id );
+				$deleted = 'attachment' === $post_type ? wp_delete_attachment( $post_id, true ) : wp_delete_post( $post_id, true );
+				if ( $deleted ) {
+					$count['deleted']++;
+				} else {
+					$count['failed']++;
+					$failed_ids[] = $post_id;
+					$errors[] = sprintf( '%s ID %d を削除できませんでした。', $label, $post_id );
+				}
+			}
+		} while ( ! empty( $ids ) );
+
+		return array(
+			'label'  => $label,
+			'count'  => $count,
+			'errors' => $errors,
+		);
+	}
+
+	private function delete_terms_by_taxonomy( $taxonomy, $label ) {
+		$count = array( 'deleted' => 0, 'failed' => 0, 'skipped' => 0, 'repaired' => 0 );
+		$errors = array();
+		$excluded_ids = array();
+		$default_category_id = 'category' === $taxonomy ? absint( get_option( 'default_category' ) ) : 0;
+
+		do {
+			$args = array(
+				'taxonomy'   => $taxonomy,
+				'hide_empty' => false,
+				'fields'     => 'ids',
+				'number'     => 100,
+				'orderby'    => 'term_id',
+				'order'      => 'ASC',
+			);
+			if ( $excluded_ids ) {
+				$args['exclude'] = $excluded_ids;
+			}
+
+			$term_ids = get_terms( $args );
+			if ( is_wp_error( $term_ids ) ) {
+				$errors[] = $term_ids->get_error_message();
+				break;
+			}
+
+			foreach ( $term_ids as $term_id ) {
+				$term_id = absint( $term_id );
+				if ( $default_category_id && $default_category_id === $term_id ) {
+					$count['skipped']++;
+					$excluded_ids[] = $term_id;
+					continue;
+				}
+
+				$deleted = wp_delete_term( $term_id, $taxonomy );
+				if ( is_wp_error( $deleted ) ) {
+					$count['failed']++;
+					$excluded_ids[] = $term_id;
+					$errors[] = $deleted->get_error_message();
+				} elseif ( $deleted ) {
+					$count['deleted']++;
+				} else {
+					$count['failed']++;
+					$excluded_ids[] = $term_id;
+					$errors[] = sprintf( '%s ID %d を削除できませんでした。', $label, $term_id );
+				}
+			}
+		} while ( ! empty( $term_ids ) );
+
+		if ( 'category' === $taxonomy ) {
+			$repair_result = $this->repair_posts_without_categories();
+			$count['repaired'] += $repair_result['repaired'];
+			$count['failed'] += $repair_result['failed'];
+			$errors = array_merge( $errors, $repair_result['errors'] );
+		}
+
+		return array(
+			'label'  => $label,
+			'count'  => $count,
+			'errors' => $errors,
+		);
+	}
+
+	private function repair_posts_without_categories() {
+		$result = array(
+			'repaired' => 0,
+			'failed'   => 0,
+			'errors'   => array(),
+		);
+
+		if ( ! taxonomy_exists( 'category' ) ) {
+			return $result;
+		}
+
+		$default_category_id = absint( get_option( 'default_category' ) );
+		$default_category = $default_category_id ? get_term( $default_category_id, 'category' ) : null;
+		if ( ! $default_category || is_wp_error( $default_category ) ) {
+			$result['errors'][] = '既定カテゴリーが見つからないため、カテゴリー未設定の投稿を修復できませんでした。';
+			return $result;
+		}
+
+		$processed_ids = array();
+		$post_statuses = array_values( get_post_stati( array(), 'names' ) );
+
+		do {
+			$args = array(
+				'post_type'        => 'post',
+				'post_status'      => $post_statuses,
+				'posts_per_page'   => 100,
+				'fields'           => 'ids',
+				'orderby'          => 'ID',
+				'order'            => 'ASC',
+				'no_found_rows'    => true,
+				'suppress_filters' => true,
+			);
+			if ( $processed_ids ) {
+				$args['post__not_in'] = $processed_ids;
+			}
+
+			$post_ids = get_posts( $args );
+			foreach ( $post_ids as $post_id ) {
+				$post_id = absint( $post_id );
+				$processed_ids[] = $post_id;
+				if ( has_category( '', $post_id ) ) {
+					continue;
+				}
+
+				$set_result = wp_set_post_terms( $post_id, array( $default_category_id ), 'category' );
+				if ( is_wp_error( $set_result ) ) {
+					$result['failed']++;
+					$result['errors'][] = sprintf( '投稿 ID %d に既定カテゴリーを設定できませんでした。', $post_id );
+				} else {
+					$result['repaired']++;
+				}
+			}
+		} while ( ! empty( $post_ids ) );
+
+		return $result;
+	}
+
 	private function body_section_labels() {
 		return array(
 			'sample_movie'        => 'サンプル動画',
-			'top_affiliate_button'=> '上部公式ボタン',
+			'top_affiliate_button'=> '公式ボタン1',
 			'product_info'        => '作品情報テーブル',
 			'description'         => '商品説明文',
+			'middle_affiliate_button' => '公式ボタン2',
 			'sample_images'       => 'サンプル画像',
-			'bottom_affiliate_button' => '下部公式ボタン',
+			'bottom_affiliate_button' => '公式ボタン3',
 		);
 	}
 
@@ -398,7 +874,6 @@ class YY_DMM_Auto_Post_Admin {
 			'category_name' => 'カテゴリ名',
 			'maker'      => 'メーカー',
 			'label'      => 'レーベル',
-			'director'   => '監督',
 			'genres'     => 'ジャンル',
 			'date'       => '発売日・配信日',
 			'volume'     => '収録時間',
@@ -406,7 +881,6 @@ class YY_DMM_Auto_Post_Admin {
 			'list_price' => '定価',
 			'delivery_prices' => '配信価格',
 			'product_url' => '商品ページ',
-			'affiliate_url' => 'アフィリエイトURL',
 		);
 	}
 
@@ -448,6 +922,29 @@ class YY_DMM_Auto_Post_Admin {
 				<?php if ( '' !== $description ) : ?>
 					<p class="description"><?php echo esc_html( $description ); ?></p>
 				<?php endif; ?>
+			</td>
+		</tr>
+		<?php
+	}
+
+	private function title_template_tokens_row() {
+		$tokens = YY_DMM_Auto_Post_Post_Builder::title_template_token_options();
+		?>
+		<tr>
+			<th scope="row">使用可能フィールド</th>
+			<td>
+				<div class="yy-dmm-token-grid" aria-live="polite">
+					<?php foreach ( $tokens as $token => $label ) : ?>
+						<div class="yy-dmm-token-item">
+							<div>
+								<code><?php echo esc_html( $token ); ?></code>
+								<span><?php echo esc_html( $label ); ?></span>
+							</div>
+							<button type="button" class="button button-small yy-dmm-copy-token" data-copy-text="<?php echo esc_attr( $token ); ?>">コピー</button>
+						</div>
+					<?php endforeach; ?>
+				</div>
+				<p class="description">コピーしたフィールドを投稿タイトル形式へ貼り付けてください。</p>
 			</td>
 		</tr>
 		<?php
@@ -506,25 +1003,97 @@ class YY_DMM_Auto_Post_Admin {
 		<?php
 	}
 
-	private function iteminfo_checkbox_group_row( $label, $key, $values ) {
-		$this->checkbox_group_row( $label, $key, $values, YY_DMM_Auto_Post_Settings::taxonomy_iteminfo_options() );
-	}
-
-	private function checkbox_group_row( $label, $key, $values, $options ) {
-		$values = is_array( $values ) ? $values : array();
+	private function category_taxonomy_matrix_row( $label, $settings ) {
+		$options = YY_DMM_Auto_Post_Settings::taxonomy_iteminfo_options();
+		$category_values = is_array( $settings['category_iteminfo_keys'] ?? null ) ? $settings['category_iteminfo_keys'] : array();
+		$parent_values = is_array( $settings['category_parent_iteminfo_keys'] ?? null ) ? $settings['category_parent_iteminfo_keys'] : array();
+		$slug_sources = is_array( $settings['category_iteminfo_slug_sources'] ?? null ) ? $settings['category_iteminfo_slug_sources'] : array();
 		?>
 		<tr>
 			<th scope="row"><?php echo esc_html( $label ); ?></th>
 			<td>
-				<fieldset class="yy-dmm-checklist">
-					<?php foreach ( $options as $option_key => $option_label ) : ?>
-						<label>
-							<input type="hidden" name="yy_dmm_auto_post_settings[<?php echo esc_attr( $key ); ?>][<?php echo esc_attr( $option_key ); ?>]" value="0">
-							<input type="checkbox" name="yy_dmm_auto_post_settings[<?php echo esc_attr( $key ); ?>][<?php echo esc_attr( $option_key ); ?>]" value="1" <?php checked( ! empty( $values[ $option_key ] ), true ); ?>>
-							<?php echo esc_html( $option_label ); ?>
-						</label>
-					<?php endforeach; ?>
-				</fieldset>
+				<table class="widefat striped yy-dmm-taxonomy-table">
+					<thead>
+						<tr>
+							<th>項目</th>
+							<th>使用</th>
+							<th>親カテゴリ</th>
+							<th>スラッグ</th>
+						</tr>
+					</thead>
+					<tbody>
+						<?php foreach ( $options as $option_key => $option_label ) : ?>
+							<?php $source = 'name' === ( $slug_sources[ $option_key ] ?? 'id' ) ? 'name' : 'id'; ?>
+							<tr>
+								<th scope="row"><?php echo esc_html( $option_label ); ?></th>
+								<td>
+									<input type="hidden" name="yy_dmm_auto_post_settings[category_iteminfo_keys][<?php echo esc_attr( $option_key ); ?>]" value="0">
+									<label>
+										<input type="checkbox" name="yy_dmm_auto_post_settings[category_iteminfo_keys][<?php echo esc_attr( $option_key ); ?>]" value="1" <?php checked( ! empty( $category_values[ $option_key ] ), true ); ?>>
+										使う
+									</label>
+								</td>
+								<td>
+									<input type="hidden" name="yy_dmm_auto_post_settings[category_parent_iteminfo_keys][<?php echo esc_attr( $option_key ); ?>]" value="0">
+									<label>
+										<input type="checkbox" name="yy_dmm_auto_post_settings[category_parent_iteminfo_keys][<?php echo esc_attr( $option_key ); ?>]" value="1" <?php checked( ! empty( $parent_values[ $option_key ] ), true ); ?>>
+										付ける
+									</label>
+								</td>
+								<td>
+									<select name="yy_dmm_auto_post_settings[category_iteminfo_slug_sources][<?php echo esc_attr( $option_key ); ?>]">
+										<option value="id" <?php selected( $source, 'id' ); ?>>ID</option>
+										<option value="name" <?php selected( $source, 'name' ); ?>>名前</option>
+									</select>
+								</td>
+							</tr>
+						<?php endforeach; ?>
+					</tbody>
+				</table>
+				<p class="description">親カテゴリを付けると「ジャンル」「メーカー」「レーベル」の下に子カテゴリーを作成します。</p>
+			</td>
+		</tr>
+		<?php
+	}
+
+	private function tag_taxonomy_matrix_row( $label, $settings ) {
+		$options = YY_DMM_Auto_Post_Settings::taxonomy_iteminfo_options();
+		$tag_values = is_array( $settings['tag_iteminfo_keys'] ?? null ) ? $settings['tag_iteminfo_keys'] : array();
+		$slug_sources = is_array( $settings['tag_iteminfo_slug_sources'] ?? null ) ? $settings['tag_iteminfo_slug_sources'] : array();
+		?>
+		<tr>
+			<th scope="row"><?php echo esc_html( $label ); ?></th>
+			<td>
+				<table class="widefat striped yy-dmm-taxonomy-table yy-dmm-taxonomy-table-tags">
+					<thead>
+						<tr>
+							<th>項目</th>
+							<th>使用</th>
+							<th>スラッグ</th>
+						</tr>
+					</thead>
+					<tbody>
+						<?php foreach ( $options as $option_key => $option_label ) : ?>
+							<?php $source = 'name' === ( $slug_sources[ $option_key ] ?? 'id' ) ? 'name' : 'id'; ?>
+							<tr>
+								<th scope="row"><?php echo esc_html( $option_label ); ?></th>
+								<td>
+									<input type="hidden" name="yy_dmm_auto_post_settings[tag_iteminfo_keys][<?php echo esc_attr( $option_key ); ?>]" value="0">
+									<label>
+										<input type="checkbox" name="yy_dmm_auto_post_settings[tag_iteminfo_keys][<?php echo esc_attr( $option_key ); ?>]" value="1" <?php checked( ! empty( $tag_values[ $option_key ] ), true ); ?>>
+										使う
+									</label>
+								</td>
+								<td>
+									<select name="yy_dmm_auto_post_settings[tag_iteminfo_slug_sources][<?php echo esc_attr( $option_key ); ?>]">
+										<option value="id" <?php selected( $source, 'id' ); ?>>ID</option>
+										<option value="name" <?php selected( $source, 'name' ); ?>>名前</option>
+									</select>
+								</td>
+							</tr>
+						<?php endforeach; ?>
+					</tbody>
+				</table>
 			</td>
 		</tr>
 		<?php

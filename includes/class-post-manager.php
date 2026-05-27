@@ -54,8 +54,12 @@ class YY_DMM_Auto_Post_Post_Manager {
 	}
 
 	public function prepare_product_info_term_links( $item ) {
+		if ( empty( $this->settings['product_info_link_terms'] ) ) {
+			return array();
+		}
+
 		$links = array();
-		foreach ( array( 'genre', 'maker', 'label', 'director' ) as $key ) {
+		foreach ( array( 'genre', 'maker', 'label' ) as $key ) {
 			$links[ $key ] = $this->prepare_iteminfo_term_links( $item, $key );
 		}
 
@@ -148,7 +152,7 @@ class YY_DMM_Auto_Post_Post_Manager {
 			$parent = $this->get_iteminfo_parent_category_id( $key );
 			$entries = YY_DMM_Auto_Post_Post_Builder::extract_iteminfo_entries( $item, $key );
 			foreach ( $entries as $entry ) {
-				$term = $this->build_term_from_iteminfo_entry( $entry );
+				$term = $this->build_term_from_iteminfo_entry( $entry, $this->category_iteminfo_slug_source( $key ) );
 				if ( empty( $term['name'] ) ) {
 					continue;
 				}
@@ -160,27 +164,66 @@ class YY_DMM_Auto_Post_Post_Manager {
 			}
 		}
 
-		wp_set_post_terms( $post_id, array_values( array_unique( $ids ) ), 'category' );
+		$ids = array_values( array_unique( array_map( 'absint', $ids ) ) );
+		if ( empty( $ids ) ) {
+			$this->ensure_post_has_category( $post_id );
+			return;
+		}
+
+		$result = wp_set_post_terms( $post_id, $ids, 'category' );
+		if ( is_wp_error( $result ) ) {
+			$this->ensure_post_has_category( $post_id );
+		}
+	}
+
+	private function ensure_post_has_category( $post_id ) {
+		$post_id = absint( $post_id );
+		if ( ! $post_id || ! taxonomy_exists( 'category' ) || has_category( '', $post_id ) ) {
+			return;
+		}
+
+		$default_category_id = absint( get_option( 'default_category' ) );
+		if ( ! $default_category_id ) {
+			return;
+		}
+
+		$default_category = get_term( $default_category_id, 'category' );
+		if ( ! $default_category || is_wp_error( $default_category ) ) {
+			return;
+		}
+
+		wp_set_post_terms( $post_id, array( $default_category_id ), 'category' );
 	}
 
 	private function prepare_iteminfo_term_links( $item, $key ) {
 		$links = array();
 		$entries = YY_DMM_Auto_Post_Post_Builder::extract_iteminfo_entries( $item, $key );
 		foreach ( $entries as $entry ) {
-			$term = $this->build_term_from_iteminfo_entry( $entry );
+			$term = $this->build_term_from_iteminfo_entry( $entry, $this->category_iteminfo_slug_source( $key ) );
 			if ( empty( $term['name'] ) ) {
 				continue;
 			}
 
 			$url = '';
-			if ( in_array( $key, $this->enabled_iteminfo_keys( 'category_iteminfo_keys' ), true ) && taxonomy_exists( 'category' ) ) {
-				$parent = $this->get_iteminfo_parent_category_id( $key );
-				$term_id = $this->get_or_create_category( $term['name'], $term['slug'], $parent );
+			if ( taxonomy_exists( 'category' ) ) {
+				if ( in_array( $key, $this->enabled_iteminfo_keys( 'category_iteminfo_keys' ), true ) ) {
+					$parent = $this->get_iteminfo_parent_category_id( $key );
+					$term_id = $this->get_or_create_category( $term['name'], $term['slug'], $parent );
+				} else {
+					$term_id = $this->find_any_category_id( $term['name'], $term['slug'] );
+				}
+
 				$url = $this->get_term_url( $term_id, 'category' );
 			}
 
-			if ( '' === $url && in_array( $key, $this->enabled_iteminfo_keys( 'tag_iteminfo_keys' ), true ) && taxonomy_exists( 'post_tag' ) ) {
-				$term_id = $this->get_or_create_tag( $term['name'], $term['slug'] );
+			if ( '' === $url && taxonomy_exists( 'post_tag' ) ) {
+				$tag_term = $this->build_term_from_iteminfo_entry( $entry, $this->tag_iteminfo_slug_source( $key ) );
+				if ( in_array( $key, $this->enabled_iteminfo_keys( 'tag_iteminfo_keys' ), true ) ) {
+					$term_id = $this->get_or_create_tag( $tag_term['name'], $tag_term['slug'] );
+				} else {
+					$term_id = $this->find_tag_id( $tag_term['name'], $tag_term['slug'] );
+				}
+
 				$url = $this->get_term_url( $term_id, 'post_tag' );
 			}
 
@@ -205,7 +248,7 @@ class YY_DMM_Auto_Post_Post_Manager {
 
 	private function get_iteminfo_parent_category_id( $key ) {
 		$base_parent = absint( $this->settings['parent_category_id'] ?? 0 );
-		if ( empty( $this->settings['create_parent_categories'] ) ) {
+		if ( ! $this->category_parent_enabled( $key ) ) {
 			return $base_parent;
 		}
 
@@ -215,6 +258,15 @@ class YY_DMM_Auto_Post_Post_Manager {
 		$term_id = $this->get_or_create_category( $name, $slug, $base_parent );
 
 		return $term_id ? $term_id : $base_parent;
+	}
+
+	private function category_parent_enabled( $key ) {
+		$values = isset( $this->settings['category_parent_iteminfo_keys'] ) && is_array( $this->settings['category_parent_iteminfo_keys'] ) ? $this->settings['category_parent_iteminfo_keys'] : array();
+		if ( array_key_exists( $key, $values ) ) {
+			return ! empty( $values[ $key ] );
+		}
+
+		return ! empty( $this->settings['create_parent_categories'] );
 	}
 
 	private function get_or_create_category( $name, $slug, $parent = 0 ) {
@@ -312,6 +364,25 @@ class YY_DMM_Auto_Post_Post_Manager {
 		return 0;
 	}
 
+	private function find_any_category_id( $name, $slug ) {
+		foreach ( array( 'slug' => $slug, 'name' => $name ) as $field => $value ) {
+			$args = array(
+				'taxonomy'   => 'category',
+				'hide_empty' => false,
+				'number'     => 1,
+				'fields'     => 'ids',
+				$field       => $value,
+			);
+
+			$terms = get_terms( $args );
+			if ( ! is_wp_error( $terms ) && ! empty( $terms ) ) {
+				return absint( $terms[0] );
+			}
+		}
+
+		return 0;
+	}
+
 	private function assign_tags( $post_id, $item ) {
 		if ( ! taxonomy_exists( 'post_tag' ) ) {
 			return;
@@ -321,7 +392,7 @@ class YY_DMM_Auto_Post_Post_Manager {
 		foreach ( $this->enabled_iteminfo_keys( 'tag_iteminfo_keys' ) as $key ) {
 			$entries = YY_DMM_Auto_Post_Post_Builder::extract_iteminfo_entries( $item, $key );
 			foreach ( $entries as $entry ) {
-				$term = $this->build_term_from_iteminfo_entry( $entry );
+				$term = $this->build_term_from_iteminfo_entry( $entry, $this->tag_iteminfo_slug_source( $key ) );
 				if ( empty( $term['name'] ) ) {
 					continue;
 				}
@@ -337,14 +408,9 @@ class YY_DMM_Auto_Post_Post_Manager {
 	}
 
 	private function get_or_create_tag( $name, $slug ) {
-		$term = get_term_by( 'slug', $slug, 'post_tag' );
-		if ( $term ) {
-			return absint( $term->term_id );
-		}
-
-		$term = get_term_by( 'name', $name, 'post_tag' );
-		if ( $term ) {
-			return absint( $term->term_id );
+		$term_id = $this->find_tag_id( $name, $slug );
+		if ( $term_id ) {
+			return $term_id;
 		}
 
 		if ( empty( $this->settings['create_tags'] ) ) {
@@ -370,6 +436,17 @@ class YY_DMM_Auto_Post_Post_Manager {
 		return absint( $result['term_id'] ?? 0 );
 	}
 
+	private function find_tag_id( $name, $slug ) {
+		foreach ( array( 'slug' => $slug, 'name' => $name ) as $field => $value ) {
+			$term = get_term_by( $field, $value, 'post_tag' );
+			if ( $term && ! is_wp_error( $term ) ) {
+				return absint( $term->term_id );
+			}
+		}
+
+		return 0;
+	}
+
 	private function enabled_iteminfo_keys( $setting_key ) {
 		$values = isset( $this->settings[ $setting_key ] ) && is_array( $this->settings[ $setting_key ] ) ? $this->settings[ $setting_key ] : array();
 		$keys = array();
@@ -382,7 +459,33 @@ class YY_DMM_Auto_Post_Post_Manager {
 		return $keys;
 	}
 
-	private function build_term_from_iteminfo_entry( $entry ) {
+	private function category_iteminfo_slug_source( $key ) {
+		$sources = isset( $this->settings['category_iteminfo_slug_sources'] ) && is_array( $this->settings['category_iteminfo_slug_sources'] ) ? $this->settings['category_iteminfo_slug_sources'] : array();
+		if ( isset( $sources[ $key ] ) ) {
+			return 'name' === $sources[ $key ] ? 'name' : 'id';
+		}
+
+		return $this->category_child_slug_source();
+	}
+
+	private function category_child_slug_source() {
+		return 'name' === ( $this->settings['category_child_slug_source'] ?? $this->tag_slug_source() ) ? 'name' : 'id';
+	}
+
+	private function tag_iteminfo_slug_source( $key ) {
+		$sources = isset( $this->settings['tag_iteminfo_slug_sources'] ) && is_array( $this->settings['tag_iteminfo_slug_sources'] ) ? $this->settings['tag_iteminfo_slug_sources'] : array();
+		if ( isset( $sources[ $key ] ) ) {
+			return 'name' === $sources[ $key ] ? 'name' : 'id';
+		}
+
+		return $this->tag_slug_source();
+	}
+
+	private function tag_slug_source() {
+		return 'name' === ( $this->settings['term_slug_source'] ?? 'id' ) ? 'name' : 'id';
+	}
+
+	private function build_term_from_iteminfo_entry( $entry, $slug_source ) {
 		$name = isset( $entry['name'] ) ? sanitize_text_field( $entry['name'] ) : '';
 		if ( '' === $name ) {
 			return array(
@@ -391,7 +494,7 @@ class YY_DMM_Auto_Post_Post_Manager {
 			);
 		}
 
-		$slug_source = 'name' === ( $this->settings['term_slug_source'] ?? 'id' ) ? 'name' : 'id';
+		$slug_source = 'name' === $slug_source ? 'name' : 'id';
 		$slug_value = 'id' === $slug_source && ! empty( $entry['id'] ) ? (string) $entry['id'] : $name;
 
 		return array(

@@ -11,8 +11,6 @@ class YY_DMM_Auto_Post_Settings {
 			'genre'    => 'ジャンル',
 			'maker'    => 'メーカー',
 			'label'    => 'レーベル',
-			'actress'  => '女優',
-			'director' => '監督',
 		);
 	}
 
@@ -40,16 +38,18 @@ class YY_DMM_Auto_Post_Settings {
 				'top_affiliate_button'=> 1,
 				'product_info'        => 1,
 				'description'         => 1,
+				'middle_affiliate_button' => 1,
 				'sample_images'       => 1,
 				'bottom_affiliate_button' => 1,
 			),
 			'body_section_order' => array(
-				'sample_movie'        => 10,
-				'top_affiliate_button'=> 20,
-				'product_info'        => 30,
-				'description'         => 40,
-				'sample_images'       => 50,
-				'bottom_affiliate_button' => 60,
+				'sample_movie'        => 1,
+				'top_affiliate_button'=> 2,
+				'product_info'        => 3,
+				'description'         => 4,
+				'middle_affiliate_button' => 5,
+				'sample_images'       => 6,
+				'bottom_affiliate_button' => 7,
 			),
 			'product_info_fields' => array(
 				'title'      => 1,
@@ -60,7 +60,6 @@ class YY_DMM_Auto_Post_Settings {
 				'category_name' => 1,
 				'maker'      => 1,
 				'label'      => 1,
-				'director'   => 1,
 				'genres'     => 1,
 				'date'       => 1,
 				'volume'     => 1,
@@ -68,45 +67,55 @@ class YY_DMM_Auto_Post_Settings {
 				'list_price' => 1,
 				'delivery_prices' => 1,
 				'product_url' => 1,
-				'affiliate_url' => 1,
 			),
 			'product_info_field_order' => array(
-				'title'      => 10,
-				'product_id' => 20,
-				'content_id' => 30,
-				'service'    => 40,
-				'floor'      => 50,
-				'category_name' => 60,
-				'maker'      => 70,
-				'label'      => 80,
-				'director'   => 90,
-				'genres'     => 100,
-				'date'       => 110,
-				'volume'     => 120,
-				'price'      => 130,
-				'list_price' => 140,
-				'delivery_prices' => 150,
-				'product_url' => 160,
-				'affiliate_url' => 170,
+				'title'      => 1,
+				'product_id' => 2,
+				'content_id' => 3,
+				'service'    => 4,
+				'floor'      => 5,
+				'category_name' => 6,
+				'maker'      => 7,
+				'label'      => 8,
+				'genres'     => 9,
+				'date'       => 10,
+				'volume'     => 11,
+				'price'      => 12,
+				'list_price' => 13,
+				'delivery_prices' => 14,
+				'product_url' => 15,
 			),
+			'product_info_link_terms' => 1,
 			'parent_category_id' => 0,
 			'create_categories'  => 1,
 			'create_parent_categories' => 0,
+			'category_parent_iteminfo_keys' => array(
+				'genre' => 0,
+				'maker' => 0,
+				'label' => 0,
+			),
 			'create_tags'        => 1,
 			'term_slug_source'   => 'id',
+			'category_child_slug_source' => 'id',
+			'category_iteminfo_slug_sources' => array(
+				'genre' => 'id',
+				'maker' => 'id',
+				'label' => 'id',
+			),
+			'tag_iteminfo_slug_sources' => array(
+				'genre' => 'id',
+				'maker' => 'id',
+				'label' => 'id',
+			),
 			'category_iteminfo_keys' => array(
 				'genre'    => 0,
 				'maker'    => 0,
 				'label'    => 1,
-				'actress'  => 0,
-				'director' => 0,
 			),
 			'tag_iteminfo_keys'  => array(
 				'genre'    => 1,
 				'maker'    => 0,
 				'label'    => 0,
-				'actress'  => 0,
-				'director' => 0,
 			),
 			'max_posts'          => 1,
 			'prevent_duplicates' => 1,
@@ -131,10 +140,30 @@ class YY_DMM_Auto_Post_Settings {
 		}
 
 		$settings = wp_parse_args( $saved, self::defaults() );
+		if ( ! array_key_exists( 'category_child_slug_source', $saved ) ) {
+			$settings['category_child_slug_source'] = 'name' === ( $settings['term_slug_source'] ?? 'id' ) ? 'name' : 'id';
+		}
+		if ( ! array_key_exists( 'category_iteminfo_slug_sources', $saved ) ) {
+			$settings['category_iteminfo_slug_sources'] = self::default_iteminfo_slug_sources( $settings['category_child_slug_source'] );
+		}
+		if ( ! array_key_exists( 'tag_iteminfo_slug_sources', $saved ) ) {
+			$settings['tag_iteminfo_slug_sources'] = self::default_iteminfo_slug_sources( $settings['term_slug_source'] );
+		}
+		if ( ! array_key_exists( 'category_parent_iteminfo_keys', $saved ) ) {
+			$settings['category_parent_iteminfo_keys'] = self::default_iteminfo_keys( ! empty( $settings['create_parent_categories'] ) );
+		}
+
 		$defaults = self::defaults();
-		foreach ( array( 'body_sections', 'body_section_order', 'product_info_fields', 'product_info_field_order', 'category_iteminfo_keys', 'tag_iteminfo_keys' ) as $key ) {
+		foreach ( array( 'body_sections', 'product_info_fields', 'category_iteminfo_keys', 'tag_iteminfo_keys', 'category_parent_iteminfo_keys' ) as $key ) {
 			$settings[ $key ] = isset( $settings[ $key ] ) && is_array( $settings[ $key ] ) ? wp_parse_args( $settings[ $key ], $defaults[ $key ] ) : $defaults[ $key ];
 		}
+		$settings['body_section_order'] = self::sanitize_order_map( $saved['body_section_order'] ?? array(), array_keys( $defaults['body_section_order'] ), $defaults['body_section_order'] );
+		$settings['product_info_fields'] = self::sanitize_boolean_map( $settings['product_info_fields'], array_keys( $defaults['product_info_fields'] ) );
+		$settings['product_info_field_order'] = self::sanitize_order_map( $saved['product_info_field_order'] ?? array(), array_keys( $defaults['product_info_field_order'] ), $defaults['product_info_field_order'] );
+		$settings['product_info_link_terms'] = ! empty( $settings['product_info_link_terms'] ) ? 1 : 0;
+		$settings['category_parent_iteminfo_keys'] = self::sanitize_iteminfo_keys( $settings['category_parent_iteminfo_keys'] );
+		$settings['category_iteminfo_slug_sources'] = self::sanitize_slug_source_map( $settings['category_iteminfo_slug_sources'] ?? array(), $settings['category_child_slug_source'] );
+		$settings['tag_iteminfo_slug_sources'] = self::sanitize_slug_source_map( $settings['tag_iteminfo_slug_sources'] ?? array(), $settings['term_slug_source'] );
 
 		return $settings;
 	}
@@ -201,12 +230,27 @@ class YY_DMM_Auto_Post_Settings {
 			array_keys( $settings['product_info_field_order'] ),
 			$settings['product_info_field_order']
 		);
+		$settings['product_info_link_terms'] = ! empty( $input['product_info_link_terms'] ) ? 1 : 0;
 
 		$settings['parent_category_id'] = absint( $input['parent_category_id'] ?? 0 );
 		$settings['create_categories']  = ! empty( $input['create_categories'] ) ? 1 : 0;
-		$settings['create_parent_categories'] = ! empty( $input['create_parent_categories'] ) ? 1 : 0;
+		$legacy_create_parent_categories = ! empty( $input['create_parent_categories'] ) ? 1 : 0;
+		$settings['category_parent_iteminfo_keys'] = self::sanitize_iteminfo_keys(
+			$input['category_parent_iteminfo_keys'] ?? self::default_iteminfo_keys( $legacy_create_parent_categories )
+		);
+		$settings['create_parent_categories'] = in_array( 1, $settings['category_parent_iteminfo_keys'], true ) ? 1 : 0;
 		$settings['create_tags']        = ! empty( $input['create_tags'] ) ? 1 : 0;
 		$settings['term_slug_source']   = 'name' === sanitize_key( $input['term_slug_source'] ?? 'id' ) ? 'name' : 'id';
+		$category_child_slug_source = sanitize_key( $input['category_child_slug_source'] ?? $settings['term_slug_source'] );
+		$settings['category_child_slug_source'] = 'name' === $category_child_slug_source ? 'name' : 'id';
+		$settings['category_iteminfo_slug_sources'] = self::sanitize_slug_source_map(
+			$input['category_iteminfo_slug_sources'] ?? array(),
+			$settings['category_child_slug_source']
+		);
+		$settings['tag_iteminfo_slug_sources'] = self::sanitize_slug_source_map(
+			$input['tag_iteminfo_slug_sources'] ?? array(),
+			$settings['term_slug_source']
+		);
 		$settings['category_iteminfo_keys'] = self::sanitize_iteminfo_keys( $input['category_iteminfo_keys'] ?? array() );
 		$settings['tag_iteminfo_keys']      = self::sanitize_iteminfo_keys( $input['tag_iteminfo_keys'] ?? array() );
 		$settings['max_posts']          = max( 1, min( 50, absint( $input['max_posts'] ?? 1 ) ) );
@@ -227,6 +271,37 @@ class YY_DMM_Auto_Post_Settings {
 		$settings['delete_on_uninstall'] = ! empty( $input['delete_on_uninstall'] ) ? 1 : 0;
 
 		return $settings;
+	}
+
+	private static function default_iteminfo_keys( $enabled ) {
+		$defaults = array();
+		foreach ( self::taxonomy_iteminfo_options() as $key => $label ) {
+			$defaults[ $key ] = ! empty( $enabled ) ? 1 : 0;
+		}
+
+		return $defaults;
+	}
+
+	private static function default_iteminfo_slug_sources( $source ) {
+		$source = 'name' === $source ? 'name' : 'id';
+		$defaults = array();
+		foreach ( self::taxonomy_iteminfo_options() as $key => $label ) {
+			$defaults[ $key ] = $source;
+		}
+
+		return $defaults;
+	}
+
+	private static function sanitize_slug_source_map( $input, $default = 'id' ) {
+		$input = is_array( $input ) ? $input : array();
+		$default = 'name' === $default ? 'name' : 'id';
+		$clean = array();
+		foreach ( self::taxonomy_iteminfo_options() as $key => $label ) {
+			$value = sanitize_key( $input[ $key ] ?? $default );
+			$clean[ $key ] = 'name' === $value ? 'name' : 'id';
+		}
+
+		return $clean;
 	}
 
 	private static function sanitize_iteminfo_keys( $input ) {
@@ -251,10 +326,38 @@ class YY_DMM_Auto_Post_Settings {
 
 	private static function sanitize_order_map( $input, $keys, $defaults ) {
 		$input = is_array( $input ) ? $input : array();
-		$clean = array();
+		$orders = array();
+		$input_values = array();
 		foreach ( $keys as $key ) {
-			$value = isset( $input[ $key ] ) ? absint( $input[ $key ] ) : absint( $defaults[ $key ] ?? 10 );
-			$clean[ $key ] = max( 1, min( 999, $value ) );
+			if ( isset( $input[ $key ] ) ) {
+				$input_values[] = absint( $input[ $key ] );
+			}
+		}
+		$use_legacy_scale = $input_values && max( $input_values ) > count( $keys );
+
+		foreach ( $keys as $key ) {
+			$value = isset( $input[ $key ] ) ? absint( $input[ $key ] ) : absint( $defaults[ $key ] ?? 1 );
+			if ( ! isset( $input[ $key ] ) && $use_legacy_scale ) {
+				$value *= 10;
+			}
+			$orders[ $key ] = max( 1, min( 999, $value ) );
+		}
+
+		$sorted_keys = $keys;
+		usort(
+			$sorted_keys,
+			static function ( $a, $b ) use ( $orders ) {
+				if ( $orders[ $a ] === $orders[ $b ] ) {
+					return strcmp( $a, $b );
+				}
+
+				return $orders[ $a ] <=> $orders[ $b ];
+			}
+		);
+
+		$clean = array();
+		foreach ( $sorted_keys as $index => $key ) {
+			$clean[ $key ] = $index + 1;
 		}
 
 		return $clean;

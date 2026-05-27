@@ -32,6 +32,25 @@ class YY_DMM_Auto_Post_Post_Builder {
 		return isset( $item['content_id'] ) ? sanitize_key( (string) $item['content_id'] ) : '';
 	}
 
+	public static function title_template_token_options() {
+		return array(
+			'{title}'         => 'タイトル',
+			'{date}'          => '発売日・配信日',
+			'{volume}'        => '収録時間',
+			'{price}'         => '価格',
+			'{list_price}'    => '定価',
+			'{delivery_prices}' => '配信価格',
+			'{delivery_hd_price}' => 'HD配信価格',
+			'{delivery_download_price}' => 'ダウンロード価格',
+			'{delivery_stream_price}' => 'ストリーミング価格',
+			'{delivery_iosdl_price}' => 'iOS DL価格',
+			'{delivery_androiddl_price}' => 'Android DL価格',
+			'{genres}'        => 'ジャンル名一覧',
+			'{maker}'         => 'メーカー名',
+			'{label}'         => 'レーベル名',
+		);
+	}
+
 	private function build_context( $item, $description, $product_info_term_links = array() ) {
 		$product_info_term_links = is_array( $product_info_term_links ) ? $product_info_term_links : array();
 		$title            = $this->get_base_title( $item );
@@ -44,7 +63,6 @@ class YY_DMM_Auto_Post_Post_Builder {
 		$genres           = self::extract_iteminfo_names( $item, 'genre' );
 		$makers           = self::extract_iteminfo_names( $item, 'maker' );
 		$labels           = self::extract_iteminfo_names( $item, 'label' );
-		$directors        = self::extract_iteminfo_names( $item, 'director' );
 		$label_name       = $labels ? $labels[0] : '';
 		$maker_name       = $makers ? $makers[0] : '';
 		$date             = $this->format_date( $item['date'] ?? '' );
@@ -76,7 +94,6 @@ class YY_DMM_Auto_Post_Post_Builder {
 			'genre_items'       => self::build_linked_iteminfo_values( $genres, $product_info_term_links['genre'] ?? array() ),
 			'maker_items'       => self::build_linked_iteminfo_values( $makers, $product_info_term_links['maker'] ?? array() ),
 			'label_items'       => self::build_linked_iteminfo_values( $labels, $product_info_term_links['label'] ?? array() ),
-			'director_items'    => self::build_linked_iteminfo_values( $directors, $product_info_term_links['director'] ?? array() ),
 			'label_name'        => $label_name,
 			'maker_name'        => $maker_name,
 			'date'              => $date,
@@ -93,12 +110,25 @@ class YY_DMM_Auto_Post_Post_Builder {
 	}
 
 	private function replace_template_tokens( $template, $item ) {
+		$genres = self::extract_iteminfo_names( $item, 'genre' );
+		$makers = self::extract_iteminfo_names( $item, 'maker' );
+		$labels = self::extract_iteminfo_names( $item, 'label' );
+		$delivery_prices = $this->extract_delivery_prices( $item );
 		$replacements = array(
-			'{title}'      => $this->get_base_title( $item ),
-			'{content_id}' => $this->get_content_id( $item ),
-			'{label}'      => self::extract_first_iteminfo_name( $item, 'label' ),
-			'{maker}'      => self::extract_first_iteminfo_name( $item, 'maker' ),
-			'{date}'       => $this->format_date( $item['date'] ?? '' ),
+			'{title}'         => $this->get_base_title( $item ),
+			'{date}'          => $this->format_date( $item['date'] ?? '' ),
+			'{volume}'        => $this->format_volume( $item['volume'] ?? '' ),
+			'{price}'         => $this->extract_price( $item ),
+			'{list_price}'    => $this->extract_price( $item, 'list_price' ),
+			'{delivery_prices}' => implode( ' / ', $delivery_prices ),
+			'{delivery_hd_price}' => $this->extract_delivery_price( $item, 'hd' ),
+			'{delivery_download_price}' => $this->extract_delivery_price( $item, 'download' ),
+			'{delivery_stream_price}' => $this->extract_delivery_price( $item, 'stream' ),
+			'{delivery_iosdl_price}' => $this->extract_delivery_price( $item, 'iosdl' ),
+			'{delivery_androiddl_price}' => $this->extract_delivery_price( $item, 'androiddl' ),
+			'{genres}'        => implode( ', ', $genres ),
+			'{maker}'         => $makers ? $makers[0] : '',
+			'{label}'         => $labels ? $labels[0] : '',
 		);
 
 		return strtr( (string) $template, $replacements );
@@ -254,16 +284,39 @@ class YY_DMM_Auto_Post_Post_Builder {
 			$total = absint( $value );
 			$hours = intdiv( $total, 60 );
 			$minutes = $total % 60;
-			return $hours > 0 ? sprintf( '%d時間%d分', $hours, $minutes ) : sprintf( '%d分', $minutes );
+			return $this->format_duration_parts( $hours, $minutes );
+		}
+
+		if ( preg_match( '/^(\d+):(\d{1,2}):(\d{1,2})$/', $value, $matches ) ) {
+			$hours = absint( $matches[1] );
+			$minutes = absint( $matches[2] );
+			$seconds = absint( $matches[3] );
+			return $this->format_duration_parts( $hours, $minutes, $seconds );
 		}
 
 		if ( preg_match( '/^(\d+):(\d+)$/', $value, $matches ) ) {
 			$hours = absint( $matches[1] );
 			$minutes = absint( $matches[2] );
-			return $hours > 0 ? sprintf( '%d時間%d分', $hours, $minutes ) : sprintf( '%d分', $minutes );
+			return $this->format_duration_parts( $hours, $minutes );
 		}
 
 		return sanitize_text_field( $value );
+	}
+
+	private function format_duration_parts( $hours, $minutes, $seconds = 0 ) {
+		$hours = absint( $hours );
+		$minutes = absint( $minutes );
+		$seconds = absint( $seconds );
+
+		if ( $hours > 0 ) {
+			return $minutes > 0 ? sprintf( '%d時間%d分', $hours, $minutes ) : sprintf( '%d時間', $hours );
+		}
+
+		if ( $minutes > 0 ) {
+			return $seconds > 0 ? sprintf( '%d分%d秒', $minutes, $seconds ) : sprintf( '%d分', $minutes );
+		}
+
+		return $seconds > 0 ? sprintf( '%d秒', $seconds ) : '0分';
 	}
 
 	private function extract_price( $item, $preferred_key = 'price' ) {
@@ -311,6 +364,32 @@ class YY_DMM_Auto_Post_Post_Builder {
 		}
 
 		return $items;
+	}
+
+	private function extract_delivery_price( $item, $type, $preferred_key = 'price' ) {
+		$deliveries = $item['prices']['deliveries']['delivery'] ?? array();
+		if ( isset( $deliveries['type'] ) ) {
+			$deliveries = array( $deliveries );
+		}
+
+		if ( ! is_array( $deliveries ) ) {
+			return '';
+		}
+
+		foreach ( $deliveries as $delivery ) {
+			if ( ! is_array( $delivery ) ) {
+				continue;
+			}
+
+			$delivery_type = isset( $delivery['type'] ) ? sanitize_key( (string) $delivery['type'] ) : '';
+			if ( $type !== $delivery_type || ! array_key_exists( $preferred_key, $delivery ) || ! is_scalar( $delivery[ $preferred_key ] ) ) {
+				continue;
+			}
+
+			return $this->format_price( $delivery[ $preferred_key ] );
+		}
+
+		return '';
 	}
 
 	private function format_name_code( $name, $code ) {

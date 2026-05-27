@@ -70,7 +70,7 @@ usort(
 
 	<?php if ( 'sample_movie' === $body_section_key && ! empty( $sample_movie_url ) ) : ?>
 		<?php echo YY_DMM_Auto_Post_Sample_Movie::build_shortcode( $sample_movie_url ); ?>
-	<?php elseif ( 'top_affiliate_button' === $body_section_key && ! empty( $affiliate_url ) ) : ?>
+	<?php elseif ( in_array( $body_section_key, array( 'top_affiliate_button', 'middle_affiliate_button', 'bottom_affiliate_button' ), true ) && ! empty( $affiliate_url ) ) : ?>
 		<p class="yy-dmm-affiliate-button" style="text-align:center;margin:24px 0;">
 			<a href="<?php echo esc_url( $affiliate_url ); ?>" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:12px 22px;background:#d63638;color:#fff;text-decoration:none;border-radius:4px;font-weight:700;">公式ページを見る</a>
 		</p>
@@ -122,11 +122,6 @@ usort(
 							<th style="padding:10px;border:1px solid #ddd;text-align:left;background:#f6f7f7;">レーベル</th>
 							<td style="padding:10px;border:1px solid #ddd;"><?php $yy_dmm_render_info_items( $label_items ); ?></td>
 						</tr>
-					<?php elseif ( 'director' === $field_key && ! empty( $director_items ) ) : ?>
-						<tr>
-							<th style="padding:10px;border:1px solid #ddd;text-align:left;background:#f6f7f7;">監督</th>
-							<td style="padding:10px;border:1px solid #ddd;"><?php $yy_dmm_render_info_items( $director_items ); ?></td>
-						</tr>
 					<?php elseif ( 'date' === $field_key && ! empty( $date ) ) : ?>
 						<tr>
 							<th style="padding:10px;border:1px solid #ddd;text-align:left;background:#f6f7f7;">発売日・配信日</th>
@@ -152,15 +147,10 @@ usort(
 							<th style="padding:10px;border:1px solid #ddd;text-align:left;background:#f6f7f7;">配信価格</th>
 							<td style="padding:10px;border:1px solid #ddd;"><?php $yy_dmm_render_text_list( $delivery_prices ); ?></td>
 						</tr>
-					<?php elseif ( 'product_url' === $field_key && ! empty( $product_url ) ) : ?>
+					<?php elseif ( 'product_url' === $field_key && ! empty( $affiliate_url ) ) : ?>
 						<tr>
 							<th style="padding:10px;border:1px solid #ddd;text-align:left;background:#f6f7f7;">商品ページ</th>
-							<td style="padding:10px;border:1px solid #ddd;"><?php $yy_dmm_render_url( $product_url, '商品ページを見る' ); ?></td>
-						</tr>
-					<?php elseif ( 'affiliate_url' === $field_key && ! empty( $affiliate_url ) ) : ?>
-						<tr>
-							<th style="padding:10px;border:1px solid #ddd;text-align:left;background:#f6f7f7;">アフィリエイトURL</th>
-							<td style="padding:10px;border:1px solid #ddd;"><?php $yy_dmm_render_url( $affiliate_url, '公式ページを見る' ); ?></td>
+							<td style="padding:10px;border:1px solid #ddd;"><?php $yy_dmm_render_url( $affiliate_url, '商品ページを見る' ); ?></td>
 						</tr>
 					<?php elseif ( 'genres' === $field_key && ! empty( $genre_items ) ) : ?>
 						<tr>
@@ -188,9 +178,5 @@ usort(
 				<a href="<?php echo esc_url( $affiliate_url ); ?>" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:12px 22px;background:#d63638;color:#fff;text-decoration:none;border-radius:4px;font-weight:700;"><?php echo esc_html( $sample_image_continue_button_text ); ?></a>
 			</p>
 		<?php endif; ?>
-	<?php elseif ( 'bottom_affiliate_button' === $body_section_key && ! empty( $affiliate_url ) ) : ?>
-		<p class="yy-dmm-affiliate-button yy-dmm-affiliate-button-bottom" style="text-align:center;margin:24px 0;">
-			<a href="<?php echo esc_url( $affiliate_url ); ?>" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:12px 22px;background:#d63638;color:#fff;text-decoration:none;border-radius:4px;font-weight:700;">公式ページを見る</a>
-		</p>
 	<?php endif; ?>
 <?php endforeach; ?>
