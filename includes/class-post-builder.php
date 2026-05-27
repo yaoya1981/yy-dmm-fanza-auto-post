@@ -4,8 +4,14 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 class YY_DMM_Auto_Post_Post_Builder {
-	public function build_content( $item, $description ) {
-		$context = $this->build_context( $item, $description );
+	private $settings;
+
+	public function __construct( $settings = array() ) {
+		$this->settings = is_array( $settings ) ? wp_parse_args( $settings, YY_DMM_Auto_Post_Settings::defaults() ) : YY_DMM_Auto_Post_Settings::defaults();
+	}
+
+	public function build_content( $item, $description, $product_info_term_links = array() ) {
+		$context = $this->build_context( $item, $description, $product_info_term_links );
 		extract( $context, EXTR_SKIP );
 
 		ob_start();
@@ -14,42 +20,88 @@ class YY_DMM_Auto_Post_Post_Builder {
 	}
 
 	public function get_wp_title( $item ) {
-		$title = $this->get_base_title( $item );
-		$label = self::extract_first_iteminfo_name( $item, 'label' );
+		$template = isset( $this->settings['title_template'] ) ? (string) $this->settings['title_template'] : '{title}｜{label}';
+		$title = $this->replace_template_tokens( $template, $item );
+		$title = trim( preg_replace( '/\s+/', ' ', $title ) );
+		$title = trim( $title, " \t\n\r\0\x0B|-:：/｜" );
 
-		return $label ? sprintf( '%s｜%s', $title, $label ) : $title;
+		return '' !== $title ? sanitize_text_field( $title ) : $this->get_base_title( $item );
 	}
 
 	public function get_content_id( $item ) {
 		return isset( $item['content_id'] ) ? sanitize_key( (string) $item['content_id'] ) : '';
 	}
 
-	private function build_context( $item, $description ) {
+	private function build_context( $item, $description, $product_info_term_links = array() ) {
+		$product_info_term_links = is_array( $product_info_term_links ) ? $product_info_term_links : array();
 		$title            = $this->get_base_title( $item );
 		$content_id       = $this->get_content_id( $item );
 		$affiliate_url    = isset( $item['affiliateURL'] ) ? esc_url_raw( $item['affiliateURL'] ) : '';
 		$sample_movie_url = $this->extract_sample_movie_url( $item );
-		$sample_images    = self::extract_sample_image_urls( $item );
+		$sample_image_size = isset( $this->settings['sample_image_size'] ) ? sanitize_key( $this->settings['sample_image_size'] ) : 'sample_l';
+		$sample_image_max = isset( $this->settings['sample_image_max'] ) ? absint( $this->settings['sample_image_max'] ) : 0;
+		$sample_images    = self::extract_sample_image_urls( $item, $sample_image_size, $sample_image_max );
 		$genres           = self::extract_iteminfo_names( $item, 'genre' );
-		$label_name       = self::extract_first_iteminfo_name( $item, 'label' );
+		$makers           = self::extract_iteminfo_names( $item, 'maker' );
+		$labels           = self::extract_iteminfo_names( $item, 'label' );
+		$directors        = self::extract_iteminfo_names( $item, 'director' );
+		$label_name       = $labels ? $labels[0] : '';
+		$maker_name       = $makers ? $makers[0] : '';
 		$date             = $this->format_date( $item['date'] ?? '' );
 		$volume           = $this->format_volume( $item['volume'] ?? '' );
 		$price            = $this->extract_price( $item );
+		$list_price       = $this->extract_price( $item, 'list_price' );
+		$delivery_prices  = $this->extract_delivery_prices( $item );
+		$body_sections    = isset( $this->settings['body_sections'] ) && is_array( $this->settings['body_sections'] ) ? $this->settings['body_sections'] : array();
+		$body_section_order = isset( $this->settings['body_section_order'] ) && is_array( $this->settings['body_section_order'] ) ? $this->settings['body_section_order'] : array();
+		$product_info_fields = isset( $this->settings['product_info_fields'] ) && is_array( $this->settings['product_info_fields'] ) ? $this->settings['product_info_fields'] : array();
+		$product_info_field_order = isset( $this->settings['product_info_field_order'] ) && is_array( $this->settings['product_info_field_order'] ) ? $this->settings['product_info_field_order'] : array();
+		$defaults = YY_DMM_Auto_Post_Settings::defaults();
 
 		return array(
 			'title'             => $title,
 			'content_id'        => $content_id,
+			'product_id'        => isset( $item['product_id'] ) ? sanitize_text_field( (string) $item['product_id'] ) : '',
+			'service_text'      => $this->format_name_code( $item['service_name'] ?? '', $item['service_code'] ?? '' ),
+			'floor_text'        => $this->format_name_code( $item['floor_name'] ?? '', $item['floor_code'] ?? '' ),
+			'category_name'     => isset( $item['category_name'] ) ? sanitize_text_field( (string) $item['category_name'] ) : '',
+			'product_url'       => isset( $item['URL'] ) ? esc_url_raw( $item['URL'] ) : '',
 			'affiliate_url'     => $affiliate_url,
 			'sample_movie_url'  => $sample_movie_url,
 			'sample_image_urls' => $sample_images,
+			'show_sample_image_continue_button' => ! empty( $this->settings['show_sample_image_continue_button'] ) ? 1 : 0,
+			'sample_image_continue_button_text' => sanitize_text_field( $this->settings['sample_image_continue_button_text'] ?? '' ),
 			'description'       => (string) $description,
 			'genres'            => $genres,
+			'genre_items'       => self::build_linked_iteminfo_values( $genres, $product_info_term_links['genre'] ?? array() ),
+			'maker_items'       => self::build_linked_iteminfo_values( $makers, $product_info_term_links['maker'] ?? array() ),
+			'label_items'       => self::build_linked_iteminfo_values( $labels, $product_info_term_links['label'] ?? array() ),
+			'director_items'    => self::build_linked_iteminfo_values( $directors, $product_info_term_links['director'] ?? array() ),
 			'label_name'        => $label_name,
+			'maker_name'        => $maker_name,
 			'date'              => $date,
 			'volume'            => $volume,
 			'price'             => $price,
+			'list_price'        => $list_price,
+			'delivery_prices'   => $delivery_prices,
+			'body_sections'     => wp_parse_args( $body_sections, $defaults['body_sections'] ),
+			'body_section_order' => wp_parse_args( $body_section_order, $defaults['body_section_order'] ),
+			'product_info_fields' => wp_parse_args( $product_info_fields, $defaults['product_info_fields'] ),
+			'product_info_field_order' => wp_parse_args( $product_info_field_order, $defaults['product_info_field_order'] ),
 			'item'              => is_array( $item ) ? $item : array(),
 		);
+	}
+
+	private function replace_template_tokens( $template, $item ) {
+		$replacements = array(
+			'{title}'      => $this->get_base_title( $item ),
+			'{content_id}' => $this->get_content_id( $item ),
+			'{label}'      => self::extract_first_iteminfo_name( $item, 'label' ),
+			'{maker}'      => self::extract_first_iteminfo_name( $item, 'maker' ),
+			'{date}'       => $this->format_date( $item['date'] ?? '' ),
+		);
+
+		return strtr( (string) $template, $replacements );
 	}
 
 	private function get_base_title( $item ) {
@@ -64,7 +116,9 @@ class YY_DMM_Auto_Post_Post_Builder {
 
 	private function extract_sample_movie_url( $item ) {
 		$movie_info = isset( $item['sampleMovieURL'] ) && is_array( $item['sampleMovieURL'] ) ? $item['sampleMovieURL'] : array();
-		foreach ( array( 'size_720_480', 'size_644_414', 'size_560_360', 'size_476_306' ) as $key ) {
+		$preferred_key = isset( $this->settings['sample_movie_size'] ) ? sanitize_key( $this->settings['sample_movie_size'] ) : 'size_720_480';
+		$keys = array_values( array_unique( array_merge( array( $preferred_key ), array( 'size_720_480', 'size_644_414', 'size_560_360', 'size_476_306' ) ) ) );
+		foreach ( $keys as $key ) {
 			if ( ! empty( $movie_info[ $key ] ) && is_string( $movie_info[ $key ] ) ) {
 				return esc_url_raw( $movie_info[ $key ] );
 			}
@@ -73,33 +127,51 @@ class YY_DMM_Auto_Post_Post_Builder {
 		return '';
 	}
 
-	public static function extract_sample_image_urls( $item ) {
+	public static function extract_sample_image_urls( $item, $preferred_group = '', $max = 0 ) {
 		$sample = isset( $item['sampleImageURL'] ) && is_array( $item['sampleImageURL'] ) ? $item['sampleImageURL'] : array();
-		foreach ( array( 'sample_l', 'sample_s' ) as $group ) {
-			if ( empty( $sample[ $group ] ) || ! is_array( $sample[ $group ] ) ) {
-				continue;
-			}
+		$groups = array( 'sample_l', 'sample_s' );
+		$preferred_group = sanitize_key( (string) $preferred_group );
+		if ( in_array( $preferred_group, $groups, true ) ) {
+			$groups = array_values( array_unique( array_merge( array( $preferred_group ), $groups ) ) );
+		}
+		$max = absint( $max );
 
-			$images = $sample[ $group ]['image'] ?? array();
-			if ( is_string( $images ) ) {
-				$images = array( $images );
-			}
-
-			if ( is_array( $images ) && ! empty( $images ) ) {
-				$clean = array();
-				foreach ( $images as $url ) {
-					if ( is_string( $url ) && '' !== trim( $url ) ) {
-						$clean[] = esc_url_raw( $url );
-					}
-				}
-
-				if ( $clean ) {
-					return $clean;
-				}
+		foreach ( $groups as $group ) {
+			$clean = self::extract_sample_image_group_urls( $sample, $group );
+			if ( $clean ) {
+				return $max > 0 ? array_slice( $clean, 0, $max ) : $clean;
 			}
 		}
 
 		return array();
+	}
+
+	private static function extract_sample_image_group_urls( $sample, $group ) {
+		if ( empty( $sample[ $group ] ) ) {
+			return array();
+		}
+
+		$group_data = $sample[ $group ];
+		$images = is_array( $group_data ) && array_key_exists( 'image', $group_data ) ? $group_data['image'] : $group_data;
+		if ( is_string( $images ) ) {
+			$images = array( $images );
+		}
+
+		if ( ! is_array( $images ) ) {
+			return array();
+		}
+
+		$clean = array();
+		array_walk_recursive(
+			$images,
+			static function ( $url ) use ( &$clean ) {
+				if ( is_string( $url ) && '' !== trim( $url ) ) {
+					$clean[] = esc_url_raw( $url );
+				}
+			}
+		);
+
+		return array_values( array_unique( $clean ) );
 	}
 
 	public static function extract_iteminfo_names( $item, $key ) {
@@ -117,6 +189,33 @@ class YY_DMM_Auto_Post_Post_Builder {
 	public static function extract_first_iteminfo_name( $item, $key ) {
 		$names = self::extract_iteminfo_names( $item, $key );
 		return $names ? $names[0] : '';
+	}
+
+	private static function build_linked_iteminfo_values( $names, $term_links ) {
+		$term_links = is_array( $term_links ) ? $term_links : array();
+		$urls_by_name = array();
+		foreach ( $term_links as $term_link ) {
+			if ( ! is_array( $term_link ) || empty( $term_link['name'] ) ) {
+				continue;
+			}
+
+			$urls_by_name[ sanitize_text_field( $term_link['name'] ) ] = ! empty( $term_link['url'] ) ? esc_url_raw( $term_link['url'] ) : '';
+		}
+
+		$items = array();
+		foreach ( $names as $name ) {
+			$name = sanitize_text_field( $name );
+			if ( '' === $name ) {
+				continue;
+			}
+
+			$items[] = array(
+				'name' => $name,
+				'url'  => $urls_by_name[ $name ] ?? '',
+			);
+		}
+
+		return $items;
 	}
 
 	public static function extract_iteminfo_entries( $item, $key ) {
@@ -167,14 +266,74 @@ class YY_DMM_Auto_Post_Post_Builder {
 		return sanitize_text_field( $value );
 	}
 
-	private function extract_price( $item ) {
+	private function extract_price( $item, $preferred_key = 'price' ) {
 		$prices = isset( $item['prices'] ) && is_array( $item['prices'] ) ? $item['prices'] : array();
-		foreach ( array( 'price', 'list_price', 'deliveries' ) as $key ) {
+		foreach ( array( $preferred_key, 'price', 'list_price' ) as $key ) {
 			if ( ! empty( $prices[ $key ] ) && is_scalar( $prices[ $key ] ) ) {
-				return sanitize_text_field( (string) $prices[ $key ] );
+				return $this->format_price( $prices[ $key ] );
 			}
 		}
 
 		return '';
+	}
+
+	private function extract_delivery_prices( $item ) {
+		$deliveries = $item['prices']['deliveries']['delivery'] ?? array();
+		if ( isset( $deliveries['type'] ) ) {
+			$deliveries = array( $deliveries );
+		}
+
+		if ( ! is_array( $deliveries ) ) {
+			return array();
+		}
+
+		$items = array();
+		foreach ( $deliveries as $delivery ) {
+			if ( ! is_array( $delivery ) ) {
+				continue;
+			}
+
+			$type = isset( $delivery['type'] ) ? sanitize_text_field( (string) $delivery['type'] ) : '';
+			$price = isset( $delivery['price'] ) ? $this->format_price( $delivery['price'] ) : '';
+			$list_price = isset( $delivery['list_price'] ) ? $this->format_price( $delivery['list_price'] ) : '';
+			if ( '' === $type && '' === $price && '' === $list_price ) {
+				continue;
+			}
+
+			$text = '' !== $type ? $type : 'delivery';
+			if ( '' !== $price ) {
+				$text .= ': ' . $price;
+			}
+			if ( '' !== $list_price && $list_price !== $price ) {
+				$text .= ' (定価 ' . $list_price . ')';
+			}
+			$items[] = $text;
+		}
+
+		return $items;
+	}
+
+	private function format_name_code( $name, $code ) {
+		$name = sanitize_text_field( (string) $name );
+		$code = sanitize_key( (string) $code );
+		if ( '' !== $name && '' !== $code ) {
+			return sprintf( '%s (%s)', $name, $code );
+		}
+
+		return '' !== $name ? $name : $code;
+	}
+
+	private function format_price( $value ) {
+		$value = sanitize_text_field( (string) $value );
+		$value = trim( str_replace( '~', '〜', $value ) );
+		if ( '' === $value || false !== strpos( $value, '円' ) ) {
+			return $value;
+		}
+
+		if ( preg_match( '/^([0-9][0-9,]*)(〜)?$/', $value, $matches ) ) {
+			return $matches[1] . '円' . ( ! empty( $matches[2] ) ? '〜' : '' );
+		}
+
+		return $value;
 	}
 }

@@ -19,7 +19,10 @@ class YY_DMM_Auto_Post_Logger {
 			'type'     => sanitize_text_field( $type ),
 			'fetched'  => absint( $result['fetched'] ?? 0 ),
 			'posted'   => absint( $result['posted'] ?? 0 ),
+			'created'  => absint( $result['created'] ?? 0 ),
+			'updated'  => absint( $result['updated'] ?? 0 ),
 			'skipped'  => absint( $result['skipped'] ?? 0 ),
+			'duplicate_skipped' => absint( $result['duplicate_skipped'] ?? 0 ),
 			'errors'   => self::sanitize_errors( $result['errors'] ?? array() ),
 		);
 

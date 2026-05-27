@@ -7,6 +7,48 @@
 	width: 100%;
 }
 
+.yy-dmm-settings-tabs {
+	margin-top: 16px;
+}
+
+.yy-dmm-settings-panel {
+	margin-top: 18px;
+}
+
+.yy-dmm-settings-panel h2 {
+	border-bottom: 1px solid #dcdcde;
+	margin: 24px 0 0;
+	padding-bottom: 8px;
+}
+
+.yy-dmm-settings-panel h2:first-child {
+	margin-top: 0;
+}
+
+.yy-dmm-checklist label {
+	display: inline-block;
+	margin: 0 18px 8px 0;
+}
+
+.yy-dmm-order-table {
+	max-width: 620px;
+}
+
+.yy-dmm-order-table th,
+.yy-dmm-order-table td {
+	vertical-align: middle;
+}
+
+.yy-dmm-order-table th:first-child,
+.yy-dmm-order-table td:first-child {
+	width: 70px;
+}
+
+.yy-dmm-order-table th:last-child,
+.yy-dmm-order-table td:last-child {
+	width: 110px;
+}
+
 .yy-dmm-run-form {
 	margin-top: 20px;
 }

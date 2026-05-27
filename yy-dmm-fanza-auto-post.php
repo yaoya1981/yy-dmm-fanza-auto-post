@@ -24,6 +24,7 @@ $yy_dmm_auto_post_includes = array(
 	'includes/class-api-client.php',
 	'includes/class-scraper.php',
 	'includes/class-media.php',
+	'includes/class-sample-movie.php',
 	'includes/class-post-builder.php',
 	'includes/class-post-manager.php',
 	'includes/class-cron.php',

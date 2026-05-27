@@ -28,6 +28,8 @@ class YY_DMM_Auto_Post_Plugin {
 	public function run() {
 		load_plugin_textdomain( 'yy-dmm-fanza-auto-post', false, dirname( YY_DMM_AUTO_POST_BASENAME ) . '/languages' );
 
+		YY_DMM_Auto_Post_Sample_Movie::hooks();
+
 		$this->cron = new YY_DMM_Auto_Post_Cron( $this );
 		$this->cron->hooks();
 
@@ -41,7 +43,10 @@ class YY_DMM_Auto_Post_Plugin {
 		$result = array(
 			'fetched'     => 0,
 			'posted'      => 0,
+			'created'     => 0,
+			'updated'     => 0,
 			'skipped'     => 0,
+			'duplicate_skipped' => 0,
 			'errors'      => array(),
 			'started_at'  => current_time( 'mysql' ),
 			'finished_at' => '',
@@ -59,10 +64,10 @@ class YY_DMM_Auto_Post_Plugin {
 		}
 
 		$result['fetched'] = count( $items );
-		$builder = new YY_DMM_Auto_Post_Post_Builder();
+		$builder = new YY_DMM_Auto_Post_Post_Builder( $settings );
 		$manager = new YY_DMM_Auto_Post_Post_Manager( $settings, $builder );
 		$scraper = new YY_DMM_Auto_Post_Scraper();
-		$media   = new YY_DMM_Auto_Post_Media();
+		$media   = new YY_DMM_Auto_Post_Media( $settings );
 		$max     = max( 1, absint( $settings['max_posts'] ) );
 
 		foreach ( $items as $item ) {
@@ -82,8 +87,10 @@ class YY_DMM_Auto_Post_Plugin {
 				continue;
 			}
 
-			if ( ! empty( $settings['prevent_duplicates'] ) && $manager->is_posted( $content_id ) ) {
+			$is_existing_post = $manager->is_posted( $content_id );
+			if ( ! empty( $settings['prevent_duplicates'] ) && $is_existing_post ) {
 				$result['skipped']++;
+				$result['duplicate_skipped']++;
 				continue;
 			}
 
@@ -103,7 +110,8 @@ class YY_DMM_Auto_Post_Plugin {
 				$featured_media_id = absint( $attachment_id );
 			}
 
-			$content = $builder->build_content( $item, $description );
+			$product_info_term_links = $manager->prepare_product_info_term_links( $item );
+			$content = $builder->build_content( $item, $description, $product_info_term_links );
 			$post_id = $manager->create_post( $item, $content, $featured_media_id );
 			if ( is_wp_error( $post_id ) ) {
 				$result['errors'][] = sprintf( '%s: %s', $content_id, $post_id->get_error_message() );
@@ -111,6 +119,11 @@ class YY_DMM_Auto_Post_Plugin {
 			}
 
 			$result['posted']++;
+			if ( $is_existing_post ) {
+				$result['updated']++;
+			} else {
+				$result['created']++;
+			}
 		}
 
 		$result['finished_at'] = current_time( 'mysql' );
