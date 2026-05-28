@@ -27,6 +27,7 @@ class YY_DMM_Auto_Post_Plugin {
 
 	public function run() {
 		load_plugin_textdomain( 'yy-dmm-fanza-auto-post', false, dirname( YY_DMM_AUTO_POST_BASENAME ) . '/languages' );
+		$this->maybe_disable_wp_cron_for_manual_ajax();
 
 		YY_DMM_Auto_Post_Sample_Movie::hooks();
 
@@ -223,9 +224,14 @@ class YY_DMM_Auto_Post_Plugin {
 				);
 			}
 
-			$product_info_term_links = $manager->prepare_product_info_term_links( $item );
-			$content = $builder->build_content( $item, $description, $product_info_term_links );
-			$post_id = $manager->create_post( $item, $content, $featured_media_id );
+			$this->begin_import_performance_mode();
+			try {
+				$product_info_term_links = $manager->prepare_product_info_term_links( $item );
+				$content = $builder->build_content( $item, $description, $product_info_term_links );
+				$post_id = $manager->create_post( $item, $content, $featured_media_id );
+			} finally {
+				$this->end_import_performance_mode();
+			}
 			if ( is_wp_error( $post_id ) ) {
 				$result['errors'][] = sprintf( '%s: %s', $content_id, $post_id->get_error_message() );
 				$emit_progress(
@@ -393,6 +399,11 @@ class YY_DMM_Auto_Post_Plugin {
 		$manager = new YY_DMM_Auto_Post_Post_Manager( $settings, $builder );
 		$scraper = new YY_DMM_Auto_Post_Scraper();
 		$media   = new YY_DMM_Auto_Post_Media( $settings );
+		$timing_enabled = $this->should_emit_timing_logs( $type );
+		$step_started_at = microtime( true );
+		$queries_before_step = $this->get_query_count();
+		$memory_before_step = $this->get_memory_usage_bytes();
+		$content_id = '';
 
 		if ( ! is_array( $item ) ) {
 			$result['skipped']++;
@@ -425,7 +436,9 @@ class YY_DMM_Auto_Post_Plugin {
 					)
 				);
 
+				$existing_check_started_at = microtime( true );
 				$is_existing_post = $manager->is_posted( $content_id );
+				$this->emit_timing_log( $timing_enabled, $emit_progress, $content_id, 'existing_check', $existing_check_started_at );
 				if ( ! empty( $settings['prevent_duplicates'] ) && $is_existing_post ) {
 					$result['skipped']++;
 					$result['duplicate_skipped']++;
@@ -439,6 +452,7 @@ class YY_DMM_Auto_Post_Plugin {
 				} else {
 					$description = '';
 					if ( $this->should_fetch_description( $settings ) ) {
+						$description_started_at = microtime( true );
 						$scrape = $scraper->fetch_description( $content_id );
 						if ( is_wp_error( $scrape ) ) {
 							$result['errors'][] = sprintf( '%s: %s', $content_id, $scrape->get_error_message() );
@@ -452,6 +466,7 @@ class YY_DMM_Auto_Post_Plugin {
 						} else {
 							$description = (string) $scrape;
 						}
+						$this->emit_timing_log( $timing_enabled, $emit_progress, $content_id, 'fetch_description', $description_started_at );
 					} else {
 						$emit_progress(
 							array(
@@ -464,6 +479,7 @@ class YY_DMM_Auto_Post_Plugin {
 
 					$featured_media_id = 0;
 					if ( $this->should_save_featured_image( $settings ) ) {
+						$featured_started_at = microtime( true );
 						$attachment_id = $media->get_or_sideload_featured( $item );
 						if ( is_wp_error( $attachment_id ) ) {
 							$result['errors'][] = sprintf( '%s: %s', $content_id, $attachment_id->get_error_message() );
@@ -477,6 +493,7 @@ class YY_DMM_Auto_Post_Plugin {
 						} else {
 							$featured_media_id = absint( $attachment_id );
 						}
+						$this->emit_timing_log( $timing_enabled, $emit_progress, $content_id, 'save_featured_image', $featured_started_at );
 					} else {
 						$emit_progress(
 							array(
@@ -487,9 +504,18 @@ class YY_DMM_Auto_Post_Plugin {
 						);
 					}
 
-					$product_info_term_links = $manager->prepare_product_info_term_links( $item );
-					$content = $builder->build_content( $item, $description, $product_info_term_links );
-					$post_id = $manager->create_post( $item, $content, $featured_media_id );
+					$this->begin_import_performance_mode();
+					try {
+						$build_started_at = microtime( true );
+						$product_info_term_links = $manager->prepare_product_info_term_links( $item );
+						$content = $builder->build_content( $item, $description, $product_info_term_links );
+						$this->emit_timing_log( $timing_enabled, $emit_progress, $content_id, 'build_content', $build_started_at );
+						$save_started_at = microtime( true );
+						$post_id = $manager->create_post( $item, $content, $featured_media_id );
+						$this->emit_timing_log( $timing_enabled, $emit_progress, $content_id, 'save_post', $save_started_at );
+					} finally {
+						$this->end_import_performance_mode();
+					}
 					if ( is_wp_error( $post_id ) ) {
 						$result['errors'][] = sprintf( '%s: %s', $content_id, $post_id->get_error_message() );
 						$emit_progress(
@@ -520,6 +546,15 @@ class YY_DMM_Auto_Post_Plugin {
 			}
 		}
 
+		$this->emit_step_timing_summary(
+			$timing_enabled,
+			$emit_progress,
+			'' !== $content_id ? $content_id : sprintf( 'item_%d', $index + 1 ),
+			$step_started_at,
+			$queries_before_step,
+			$memory_before_step
+		);
+
 		$state['index'] = $index + 1;
 		$state['result'] = $result;
 		if ( $state['index'] >= count( $items ) || ( ! $all && $result['posted'] >= $max ) ) {
@@ -544,6 +579,113 @@ class YY_DMM_Auto_Post_Plugin {
 
 	private function should_save_featured_image( $settings ) {
 		return ! empty( $settings['save_featured_image'] );
+	}
+
+	private function should_emit_timing_logs( $type ) {
+		return 'manual' === sanitize_key( (string) $type );
+	}
+
+	private function emit_timing_log( $enabled, $emit_progress, $content_id, $label, $started_at ) {
+		if ( ! $enabled ) {
+			return;
+		}
+
+		call_user_func(
+			$emit_progress,
+			array(
+				'status'  => 'running',
+				'level'   => 'info',
+				'message' => sprintf(
+					'[PERF] %s: %s=%dms',
+					$content_id,
+					sanitize_key( $label ),
+					$this->elapsed_ms( $started_at )
+				),
+			)
+		);
+	}
+
+	private function emit_step_timing_summary( $enabled, $emit_progress, $content_id, $step_started_at, $queries_before_step, $memory_before_step ) {
+		if ( ! $enabled ) {
+			return;
+		}
+
+		$query_delta = max( 0, $this->get_query_count() - absint( $queries_before_step ) );
+		$memory_delta = max( 0, $this->get_memory_usage_bytes() - absint( $memory_before_step ) );
+		call_user_func(
+			$emit_progress,
+			array(
+				'status'  => 'running',
+				'level'   => 'info',
+				'message' => sprintf(
+					'[PERF] %s: total=%dms queries=+%d mem=+%s',
+					$content_id,
+					$this->elapsed_ms( $step_started_at ),
+					$query_delta,
+					size_format( $memory_delta )
+				),
+			)
+		);
+	}
+
+	private function elapsed_ms( $started_at ) {
+		$started_at = is_numeric( $started_at ) ? (float) $started_at : microtime( true );
+		return (int) round( max( 0, microtime( true ) - $started_at ) * 1000 );
+	}
+
+	private function get_query_count() {
+		if ( function_exists( 'get_num_queries' ) ) {
+			return absint( get_num_queries() );
+		}
+
+		return 0;
+	}
+
+	private function get_memory_usage_bytes() {
+		if ( function_exists( 'memory_get_usage' ) ) {
+			return absint( memory_get_usage( true ) );
+		}
+
+		return 0;
+	}
+
+	private function maybe_disable_wp_cron_for_manual_ajax() {
+		if ( ! ( defined( 'DOING_AJAX' ) && DOING_AJAX ) ) {
+			return;
+		}
+
+		$action = isset( $_REQUEST['action'] ) ? sanitize_key( wp_unslash( $_REQUEST['action'] ) ) : '';
+		if ( ! in_array( $action, array( 'yy_dmm_auto_post_run_manual', 'yy_dmm_auto_post_manual_step' ), true ) ) {
+			return;
+		}
+
+		if ( ! defined( 'DISABLE_WP_CRON' ) ) {
+			define( 'DISABLE_WP_CRON', true );
+		}
+	}
+
+	private function begin_import_performance_mode() {
+		if ( function_exists( 'wp_defer_term_counting' ) ) {
+			wp_defer_term_counting( true );
+		}
+		if ( function_exists( 'wp_defer_comment_counting' ) ) {
+			wp_defer_comment_counting( true );
+		}
+		if ( function_exists( 'wp_suspend_cache_invalidation' ) ) {
+			wp_suspend_cache_invalidation( true );
+		}
+	}
+
+	private function end_import_performance_mode() {
+		if ( function_exists( 'wp_suspend_cache_invalidation' ) ) {
+			wp_suspend_cache_invalidation( false );
+		}
+		if ( function_exists( 'wp_defer_comment_counting' ) ) {
+			wp_defer_comment_counting( false );
+		}
+		if ( function_exists( 'wp_defer_term_counting' ) ) {
+			wp_defer_term_counting( false );
+		}
 	}
 
 	private function finish_import_state( $state, $result, $emit_progress ) {

@@ -100,6 +100,7 @@ class YY_DMM_Auto_Post_Admin {
 		}
 
 		check_ajax_referer( 'yy_dmm_auto_post_run_manual', 'nonce' );
+		$this->disable_wp_cron_for_manual_request();
 		if ( function_exists( 'set_time_limit' ) ) {
 			@set_time_limit( 60 );
 		}
@@ -112,6 +113,12 @@ class YY_DMM_Auto_Post_Admin {
 				$self->update_manual_progress( $event );
 			}
 		);
+		$items = isset( $state['items'] ) && is_array( $state['items'] ) ? $state['items'] : array();
+		if ( empty( $state['done'] ) ) {
+			$state['items_key'] = $this->manual_items_key();
+			set_transient( $state['items_key'], $items, 30 * MINUTE_IN_SECONDS );
+		}
+		unset( $state['items'] );
 		set_transient( $this->manual_state_key(), $state, 30 * MINUTE_IN_SECONDS );
 		if ( ! empty( $state['done'] ) ) {
 			$result = isset( $state['result'] ) && is_array( $state['result'] ) ? $state['result'] : array();
@@ -134,6 +141,7 @@ class YY_DMM_Auto_Post_Admin {
 		}
 
 		check_ajax_referer( 'yy_dmm_auto_post_run_manual', 'nonce' );
+		$this->disable_wp_cron_for_manual_request();
 		if ( function_exists( 'set_time_limit' ) ) {
 			@set_time_limit( 90 );
 		}
@@ -142,6 +150,12 @@ class YY_DMM_Auto_Post_Admin {
 		if ( ! is_array( $state ) ) {
 			wp_send_json_error( array( 'message' => '手動実行の状態が見つかりません。もう一度実行してください。' ), 404 );
 		}
+		$items_key = isset( $state['items_key'] ) ? sanitize_key( $state['items_key'] ) : $this->manual_items_key();
+		$items = get_transient( $items_key );
+		if ( ! is_array( $items ) ) {
+			wp_send_json_error( array( 'message' => '手動実行の商品データが見つかりません。もう一度実行してください。' ), 404 );
+		}
+		$state['items'] = $items;
 
 		$self = $this;
 		$state = $this->plugin->run_import_step(
@@ -150,12 +164,15 @@ class YY_DMM_Auto_Post_Admin {
 				$self->update_manual_progress( $event );
 			}
 		);
+		unset( $state['items'] );
+		$state['items_key'] = $items_key;
 		set_transient( $this->manual_state_key(), $state, 30 * MINUTE_IN_SECONDS );
 		if ( ! empty( $state['done'] ) ) {
 			$result = isset( $state['result'] ) && is_array( $state['result'] ) ? $state['result'] : array();
 			set_transient( 'yy_dmm_auto_post_manual_result_' . get_current_user_id(), $result, 10 * MINUTE_IN_SECONDS );
 			$this->finish_manual_progress( $result );
 			delete_transient( $this->manual_state_key() );
+			delete_transient( $items_key );
 		}
 
 		wp_send_json_success(
@@ -370,8 +387,18 @@ class YY_DMM_Auto_Post_Admin {
 		return 'yy_dmm_auto_post_manual_state_' . get_current_user_id();
 	}
 
+	private function manual_items_key() {
+		return 'yy_dmm_auto_post_manual_items_' . get_current_user_id();
+	}
+
 	private function manual_progress_key() {
 		return 'yy_dmm_auto_post_manual_progress_' . get_current_user_id();
+	}
+
+	private function disable_wp_cron_for_manual_request() {
+		if ( ! defined( 'DISABLE_WP_CRON' ) ) {
+			define( 'DISABLE_WP_CRON', true );
+		}
 	}
 
 	private function reset_manual_progress() {
