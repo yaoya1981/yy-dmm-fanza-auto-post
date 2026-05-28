@@ -27,7 +27,9 @@ class YY_DMM_Auto_Post_Settings {
 			'hits'               => 50,
 			'post_status'        => 'draft',
 			'sync_post_date_with_release_date' => 0,
+			'fetch_description'  => 1,
 			'sample_movie_size'  => 'size_720_480',
+			'save_featured_image' => 1,
 			'featured_image_source' => 'image_small',
 			'sample_image_size'  => 'sample_l',
 			'sample_image_max'   => 0,
@@ -200,10 +202,12 @@ class YY_DMM_Auto_Post_Settings {
 		$post_status = sanitize_key( $input['post_status'] ?? 'draft' );
 		$settings['post_status'] = in_array( $post_status, array( 'draft', 'publish' ), true ) ? $post_status : 'draft';
 		$settings['sync_post_date_with_release_date'] = ! empty( $input['sync_post_date_with_release_date'] ) ? 1 : 0;
+		$settings['fetch_description'] = ! empty( $input['fetch_description'] ) ? 1 : 0;
 
 		$movie_size = sanitize_key( $input['sample_movie_size'] ?? $settings['sample_movie_size'] );
 		$settings['sample_movie_size'] = in_array( $movie_size, self::sample_movie_size_keys(), true ) ? $movie_size : 'size_720_480';
 
+		$settings['save_featured_image'] = ! empty( $input['save_featured_image'] ) ? 1 : 0;
 		$featured_source = sanitize_key( $input['featured_image_source'] ?? $settings['featured_image_source'] );
 		$settings['featured_image_source'] = in_array( $featured_source, self::featured_image_source_keys(), true ) ? $featured_source : 'image_small';
 
