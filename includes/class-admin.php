@@ -12,10 +12,14 @@ class YY_DMM_Auto_Post_Admin {
 
 	public function hooks() {
 		add_action( 'admin_menu', array( $this, 'add_menu' ) );
+		add_action( 'admin_menu', array( $this, 'add_api_test_menu' ), 11 );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_assets' ) );
 		add_action( 'admin_post_yy_dmm_auto_post_save_settings', array( $this, 'handle_save_settings' ) );
 		add_action( 'admin_post_yy_dmm_auto_post_run_manual', array( $this, 'handle_manual_run' ) );
 		add_action( 'admin_post_yy_dmm_auto_post_delete_content', array( $this, 'handle_delete_content' ) );
+		add_action( 'wp_ajax_yy_dmm_auto_post_run_manual', array( $this, 'handle_manual_run_ajax' ) );
+		add_action( 'wp_ajax_yy_dmm_auto_post_manual_step', array( $this, 'handle_manual_step_ajax' ) );
+		add_action( 'wp_ajax_yy_dmm_auto_post_manual_progress', array( $this, 'handle_manual_progress_ajax' ) );
 	}
 
 	public function add_menu() {
@@ -36,6 +40,10 @@ class YY_DMM_Auto_Post_Admin {
 		add_submenu_page( 'yy-dmm-fanza-auto-post', 'クリーンアップ', 'クリーンアップ', 'manage_options', 'yy-dmm-fanza-auto-post-cleanup', array( $this, 'render_cleanup_page' ) );
 	}
 
+	public function add_api_test_menu() {
+		add_submenu_page( 'yy-dmm-fanza-auto-post', 'APIテスト', 'APIテスト', 'manage_options', 'yy-dmm-fanza-auto-post-api-test', array( $this, 'render_api_test_page' ) );
+	}
+
 	public function enqueue_assets() {
 		$page = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : '';
 		if ( 0 !== strpos( $page, 'yy-dmm-fanza-auto-post' ) ) {
@@ -44,6 +52,13 @@ class YY_DMM_Auto_Post_Admin {
 
 		wp_enqueue_style( 'yy-dmm-auto-post-admin', YY_DMM_AUTO_POST_URL . 'assets/admin.css', array(), YY_DMM_AUTO_POST_VERSION );
 		wp_enqueue_script( 'yy-dmm-auto-post-admin', YY_DMM_AUTO_POST_URL . 'assets/admin.js', array(), YY_DMM_AUTO_POST_VERSION, true );
+		wp_localize_script(
+			'yy-dmm-auto-post-admin',
+			'yyDmmAutoPostAdmin',
+			array(
+				'ajaxUrl' => admin_url( 'admin-ajax.php' ),
+			)
+		);
 	}
 
 	public function handle_save_settings() {
@@ -79,6 +94,88 @@ class YY_DMM_Auto_Post_Admin {
 		exit;
 	}
 
+	public function handle_manual_run_ajax() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( array( 'message' => '権限がありません。' ), 403 );
+		}
+
+		check_ajax_referer( 'yy_dmm_auto_post_run_manual', 'nonce' );
+		if ( function_exists( 'set_time_limit' ) ) {
+			@set_time_limit( 60 );
+		}
+
+		$this->reset_manual_progress();
+		$self = $this;
+		$state = $this->plugin->begin_import(
+			'manual',
+			static function ( $event ) use ( $self ) {
+				$self->update_manual_progress( $event );
+			}
+		);
+		set_transient( $this->manual_state_key(), $state, 30 * MINUTE_IN_SECONDS );
+		if ( ! empty( $state['done'] ) ) {
+			$result = isset( $state['result'] ) && is_array( $state['result'] ) ? $state['result'] : array();
+			set_transient( 'yy_dmm_auto_post_manual_result_' . get_current_user_id(), $result, 10 * MINUTE_IN_SECONDS );
+			$this->finish_manual_progress( $result );
+		}
+
+		wp_send_json_success(
+			array(
+				'done'     => ! empty( $state['done'] ),
+				'result'   => isset( $state['result'] ) ? $state['result'] : array(),
+				'progress' => $this->get_manual_progress(),
+			)
+		);
+	}
+
+	public function handle_manual_step_ajax() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( array( 'message' => '権限がありません。' ), 403 );
+		}
+
+		check_ajax_referer( 'yy_dmm_auto_post_run_manual', 'nonce' );
+		if ( function_exists( 'set_time_limit' ) ) {
+			@set_time_limit( 90 );
+		}
+
+		$state = get_transient( $this->manual_state_key() );
+		if ( ! is_array( $state ) ) {
+			wp_send_json_error( array( 'message' => '手動実行の状態が見つかりません。もう一度実行してください。' ), 404 );
+		}
+
+		$self = $this;
+		$state = $this->plugin->run_import_step(
+			$state,
+			static function ( $event ) use ( $self ) {
+				$self->update_manual_progress( $event );
+			}
+		);
+		set_transient( $this->manual_state_key(), $state, 30 * MINUTE_IN_SECONDS );
+		if ( ! empty( $state['done'] ) ) {
+			$result = isset( $state['result'] ) && is_array( $state['result'] ) ? $state['result'] : array();
+			set_transient( 'yy_dmm_auto_post_manual_result_' . get_current_user_id(), $result, 10 * MINUTE_IN_SECONDS );
+			$this->finish_manual_progress( $result );
+			delete_transient( $this->manual_state_key() );
+		}
+
+		wp_send_json_success(
+			array(
+				'done'     => ! empty( $state['done'] ),
+				'result'   => isset( $state['result'] ) ? $state['result'] : array(),
+				'progress' => $this->get_manual_progress(),
+			)
+		);
+	}
+
+	public function handle_manual_progress_ajax() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( array( 'message' => '権限がありません。' ), 403 );
+		}
+
+		check_ajax_referer( 'yy_dmm_auto_post_run_manual', 'nonce' );
+		wp_send_json_success( $this->get_manual_progress() );
+	}
+
 	public function handle_delete_content() {
 		if ( ! current_user_can( 'manage_options' ) ) {
 			wp_die( esc_html__( '権限がありません。', 'yy-dmm-fanza-auto-post' ) );
@@ -111,6 +208,109 @@ class YY_DMM_Auto_Post_Admin {
 		set_transient( 'yy_dmm_auto_post_delete_result_' . get_current_user_id(), $result, 10 * MINUTE_IN_SECONDS );
 		wp_safe_redirect( admin_url( 'admin.php?page=yy-dmm-fanza-auto-post-cleanup&cleanup-complete=1' ) );
 		exit;
+	}
+
+	public function render_api_test_page() {
+		$this->guard();
+		$settings = YY_DMM_Auto_Post_Settings::get();
+		$keyword  = '';
+		$result   = null;
+
+		if ( 'POST' === strtoupper( $_SERVER['REQUEST_METHOD'] ?? '' ) ) {
+			check_admin_referer( 'yy_dmm_auto_post_api_test' );
+			$posted_settings = isset( $_POST['yy_dmm_auto_post_settings'] ) ? wp_unslash( $_POST['yy_dmm_auto_post_settings'] ) : array();
+			$posted_settings = is_array( $posted_settings ) ? $posted_settings : array();
+			$keyword = isset( $posted_settings['api_test_keyword'] ) ? sanitize_text_field( $posted_settings['api_test_keyword'] ) : '';
+			$result = ( new YY_DMM_Auto_Post_API_Client( $settings ) )->fetch_test_items( $keyword, 10 );
+		}
+		?>
+		<div class="wrap yy-dmm-admin">
+			<h1>APIテスト</h1>
+			<form method="post" action="<?php echo esc_url( admin_url( 'admin.php?page=yy-dmm-fanza-auto-post-api-test' ) ); ?>" class="yy-dmm-api-test-form">
+				<?php wp_nonce_field( 'yy_dmm_auto_post_api_test' ); ?>
+				<table class="form-table yy-dmm-settings-panel" role="presentation">
+					<?php $this->text_row( 'キーワード', 'api_test_keyword', $keyword, '検索キーワード' ); ?>
+				</table>
+				<?php submit_button( 'APIテストを実行', 'primary', 'yy_dmm_api_test_submit', false ); ?>
+			</form>
+			<?php $this->render_api_test_result( $result, $keyword ); ?>
+		</div>
+		<?php
+	}
+
+	private function render_api_test_result( $result, $keyword ) {
+		if ( null === $result ) {
+			return;
+		}
+
+		if ( is_wp_error( $result ) ) {
+			?>
+			<div class="notice notice-error"><p><?php echo esc_html( $result->get_error_message() ); ?></p></div>
+			<?php
+			return;
+		}
+
+		$items = isset( $result['items'] ) && is_array( $result['items'] ) ? $result['items'] : array();
+		?>
+		<div class="yy-dmm-api-test-result">
+			<h2>検索結果</h2>
+			<table class="widefat striped yy-dmm-api-test-summary">
+				<tbody>
+					<tr>
+						<th>キーワード</th>
+						<td><?php echo '' !== $keyword ? esc_html( $keyword ) : '（空白）'; ?></td>
+					</tr>
+					<tr>
+						<th>API結果件数</th>
+						<td><?php echo esc_html( absint( $result['total_count'] ?? 0 ) ); ?></td>
+					</tr>
+					<tr>
+						<th>表示件数</th>
+						<td><?php echo esc_html( absint( $result['display_count'] ?? count( $items ) ) ); ?> / 10</td>
+					</tr>
+				</tbody>
+			</table>
+
+			<table class="widefat striped yy-dmm-api-test-table">
+				<thead>
+					<tr>
+						<th>No.</th>
+						<th>content_id</th>
+						<th>タイトル</th>
+						<th>日付</th>
+						<th>アフィリエイトURL</th>
+						<th>JSON</th>
+					</tr>
+				</thead>
+				<tbody>
+					<?php if ( $items ) : ?>
+						<?php foreach ( $items as $index => $item ) : ?>
+							<?php $item = is_array( $item ) ? $item : array(); ?>
+							<tr>
+								<td><?php echo esc_html( $index + 1 ); ?></td>
+								<td><code><?php echo esc_html( $item['content_id'] ?? '' ); ?></code></td>
+								<td><?php echo esc_html( $item['title'] ?? '' ); ?></td>
+								<td><?php echo esc_html( $item['date'] ?? '' ); ?></td>
+								<td>
+									<?php if ( ! empty( $item['affiliateURL'] ) ) : ?>
+										<a href="<?php echo esc_url( $item['affiliateURL'] ); ?>" target="_blank" rel="noopener noreferrer">URL</a>
+									<?php endif; ?>
+								</td>
+								<td><pre><?php echo esc_html( $this->format_api_test_json( $item ) ); ?></pre></td>
+							</tr>
+						<?php endforeach; ?>
+					<?php else : ?>
+						<tr><td colspan="6">該当する商品はありません。</td></tr>
+					<?php endif; ?>
+				</tbody>
+			</table>
+		</div>
+		<?php
+	}
+
+	private function format_api_test_json( $value ) {
+		$json = wp_json_encode( $value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT );
+		return false !== $json ? $json : '';
 	}
 
 	public function render_settings_page() {
@@ -159,8 +359,145 @@ class YY_DMM_Auto_Post_Admin {
 			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="yy-dmm-run-form">
 				<input type="hidden" name="action" value="yy_dmm_auto_post_run_manual">
 				<?php wp_nonce_field( 'yy_dmm_auto_post_run_manual' ); ?>
+				<?php $this->render_manual_progress_panel(); ?>
 				<?php submit_button( '今すぐ取得して投稿する', 'primary', 'submit', false ); ?>
 			</form>
+		</div>
+		<?php
+	}
+
+	private function manual_state_key() {
+		return 'yy_dmm_auto_post_manual_state_' . get_current_user_id();
+	}
+
+	private function manual_progress_key() {
+		return 'yy_dmm_auto_post_manual_progress_' . get_current_user_id();
+	}
+
+	private function reset_manual_progress() {
+		$progress = array(
+			'status'       => 'running',
+			'status_label' => '実行中',
+			'started_at'   => current_time( 'mysql' ),
+			'finished_at'  => '',
+			'result'       => array(
+				'fetched'     => 0,
+				'posted'      => 0,
+				'created'     => 0,
+				'updated'     => 0,
+				'skipped'     => 0,
+				'duplicate_skipped' => 0,
+				'errors'      => array(),
+			),
+			'lines'        => array(
+				$this->manual_progress_line( 'info', '手動実行を開始しました。' ),
+			),
+		);
+
+		set_transient( $this->manual_progress_key(), $progress, 30 * MINUTE_IN_SECONDS );
+	}
+
+	private function get_manual_progress() {
+		$progress = get_transient( $this->manual_progress_key() );
+		if ( ! is_array( $progress ) ) {
+			return array(
+				'status'       => 'idle',
+				'status_label' => '待機中',
+				'result'       => array(
+					'fetched'     => 0,
+					'posted'      => 0,
+					'created'     => 0,
+					'updated'     => 0,
+					'skipped'     => 0,
+					'duplicate_skipped' => 0,
+					'errors'      => array(),
+				),
+				'lines'        => array(),
+			);
+		}
+
+		return $progress;
+	}
+
+	private function update_manual_progress( $event ) {
+		$event = is_array( $event ) ? $event : array();
+		$progress = $this->get_manual_progress();
+		$progress['status'] = sanitize_key( $event['status'] ?? $progress['status'] ?? 'running' );
+		$progress['status_label'] = $this->manual_progress_status_label( $progress['status'] );
+		if ( isset( $event['result'] ) && is_array( $event['result'] ) ) {
+			$progress['result'] = $this->sanitize_manual_progress_result( $event['result'] );
+		}
+
+		$message = isset( $event['message'] ) ? sanitize_text_field( wp_strip_all_tags( (string) $event['message'] ) ) : '';
+		if ( '' !== $message ) {
+			$level = sanitize_key( $event['level'] ?? 'info' );
+			$progress['lines'][] = $this->manual_progress_line( $level, $message );
+			$progress['lines'] = array_slice( $progress['lines'], -200 );
+		}
+
+		set_transient( $this->manual_progress_key(), $progress, 30 * MINUTE_IN_SECONDS );
+	}
+
+	private function finish_manual_progress( $result ) {
+		$progress = $this->get_manual_progress();
+		$progress['status'] = empty( $result['errors'] ) ? 'done' : 'done_with_errors';
+		$progress['status_label'] = $this->manual_progress_status_label( $progress['status'] );
+		$progress['finished_at'] = current_time( 'mysql' );
+		$progress['result'] = $this->sanitize_manual_progress_result( $result );
+		$progress['lines'][] = $this->manual_progress_line( empty( $result['errors'] ) ? 'success' : 'warning', '手動実行が完了しました。' );
+		$progress['lines'] = array_slice( $progress['lines'], -200 );
+
+		set_transient( $this->manual_progress_key(), $progress, 30 * MINUTE_IN_SECONDS );
+	}
+
+	private function manual_progress_line( $level, $message ) {
+		return array(
+			'time'    => current_time( 'H:i:s' ),
+			'level'   => sanitize_key( $level ),
+			'message' => sanitize_text_field( wp_strip_all_tags( (string) $message ) ),
+		);
+	}
+
+	private function manual_progress_status_label( $status ) {
+		$labels = array(
+			'idle'             => '待機中',
+			'running'          => '実行中',
+			'done'             => '完了',
+			'done_with_errors' => '完了（要確認）',
+			'error'            => 'エラー',
+		);
+
+		return $labels[ $status ] ?? $labels['running'];
+	}
+
+	private function sanitize_manual_progress_result( $result ) {
+		$result = is_array( $result ) ? $result : array();
+
+		return array(
+			'fetched'     => absint( $result['fetched'] ?? 0 ),
+			'posted'      => absint( $result['posted'] ?? 0 ),
+			'created'     => absint( $result['created'] ?? 0 ),
+			'updated'     => absint( $result['updated'] ?? 0 ),
+			'skipped'     => absint( $result['skipped'] ?? 0 ),
+			'duplicate_skipped' => absint( $result['duplicate_skipped'] ?? 0 ),
+			'errors'      => array_map( 'sanitize_text_field', array_slice( (array) ( $result['errors'] ?? array() ), 0, 20 ) ),
+		);
+	}
+
+	private function render_manual_progress_panel() {
+		?>
+		<div class="yy-dmm-realtime-log" data-yy-dmm-manual-progress hidden>
+			<h2>リアルタイムログ</h2>
+			<div class="yy-dmm-progress-summary">
+				<span>状態: <strong data-yy-dmm-progress-status>待機中</strong></span>
+				<span>取得: <strong data-yy-dmm-progress-fetched>0</strong></span>
+				<span>投稿: <strong data-yy-dmm-progress-posted>0</strong></span>
+				<span>新規: <strong data-yy-dmm-progress-created>0</strong></span>
+				<span>更新: <strong data-yy-dmm-progress-updated>0</strong></span>
+				<span>スキップ: <strong data-yy-dmm-progress-skipped>0</strong></span>
+				<span>エラー: <strong data-yy-dmm-progress-errors>0</strong></span>
+			</div>
+			<ul class="yy-dmm-progress-lines" data-yy-dmm-progress-lines></ul>
 		</div>
 		<?php
 	}
@@ -337,7 +674,8 @@ class YY_DMM_Auto_Post_Admin {
 				</td>
 			</tr>
 			<?php $this->checkbox_row( '投稿日を発売日・配信日にする', 'sync_post_date_with_release_date', $settings['sync_post_date_with_release_date'], 'ONの場合はAPIの発売日・配信日を投稿日時に使用します。日付が取得できない場合は通常の投稿日時になります。' ); ?>
-			<?php $this->number_row( '1回の最大投稿数', 'max_posts', $settings['max_posts'], 1, 50 ); ?>
+			<?php $this->text_row( '投稿用アフィリエイトID', 'post_affiliate_id', $settings['post_affiliate_id'], '', '登録したサイトURL用のアフィリエイトIDを投稿リンクで使用する場合に入力してください。空白ならAPI設定のアフィリエイトIDのまま投稿します。' ); ?>
+			<?php $this->max_posts_row( $settings ); ?>
 			<?php $this->checkbox_row( '重複投稿防止', 'prevent_duplicates', $settings['prevent_duplicates'], 'ONの場合は投稿済みの品番をスキップします。OFFの場合は同じ品番の既存投稿を更新し、未投稿の商品だけ新規投稿します。' ); ?>
 			<?php $this->checkbox_row( '自動実行', 'enable_cron', $settings['enable_cron'] ); ?>
 			<tr>
@@ -369,12 +707,18 @@ class YY_DMM_Auto_Post_Admin {
 			<h2>本文設定</h2>
 			<table class="form-table" role="presentation">
 				<?php $this->ordered_checkbox_group_row( '表示する項目', 'body_sections', 'body_section_order', $settings['body_sections'], $settings['body_section_order'], $this->body_section_labels() ); ?>
+				<?php $this->text_row( '公式ボタン1のテキスト', 'affiliate_button_text_top', $settings['affiliate_button_text_top'], '公式ページを見る' ); ?>
+				<?php $this->text_row( '公式ボタン2のテキスト', 'affiliate_button_text_middle', $settings['affiliate_button_text_middle'], '公式ページを見る' ); ?>
+				<?php $this->text_row( '公式ボタン3のテキスト', 'affiliate_button_text_bottom', $settings['affiliate_button_text_bottom'], '公式ページを見る' ); ?>
 			</table>
 
 			<h2>作品情報テーブル</h2>
 			<table class="form-table" role="presentation">
-				<?php $this->checkbox_row( 'リンクを付ける', 'product_info_link_terms', $settings['product_info_link_terms'], 'レーベル、メーカー、ジャンルに対応するカテゴリーまたはタグがある場合はリンク形式で表示します。' ); ?>
 				<?php $this->ordered_checkbox_group_row( '表示する項目', 'product_info_fields', 'product_info_field_order', $settings['product_info_fields'], $settings['product_info_field_order'], $this->product_info_field_labels() ); ?>
+				<?php $this->checkbox_row( 'リンクを付ける', 'product_info_link_terms', $settings['product_info_link_terms'], 'レーベル、メーカー、ジャンルに対応するカテゴリーまたはタグがある場合はリンク形式で表示します。' ); ?>
+				<?php $this->text_row( '商品ページの左側テキスト', 'product_info_product_url_label', $settings['product_info_product_url_label'], '商品ページ' ); ?>
+				<?php $this->text_row( '商品ページのリンクテキスト', 'product_info_product_url_link_text', $settings['product_info_product_url_link_text'], '商品ページを見る' ); ?>
+				<?php $this->checkbox_row( '商品ページをボタンにする', 'product_info_product_url_button', $settings['product_info_product_url_button'] ); ?>
 			</table>
 		</div>
 		<?php
@@ -960,6 +1304,24 @@ class YY_DMM_Auto_Post_Admin {
 				<?php if ( '' !== $description ) : ?>
 					<p class="description"><?php echo esc_html( $description ); ?></p>
 				<?php endif; ?>
+			</td>
+		</tr>
+		<?php
+	}
+
+	private function max_posts_row( $settings ) {
+		$id = 'yy-dmm-max-posts';
+		$all_id = 'yy-dmm-max-posts-all';
+		?>
+		<tr>
+			<th scope="row"><label for="<?php echo esc_attr( $id ); ?>">1回の最大投稿数</label></th>
+			<td>
+				<input id="<?php echo esc_attr( $id ); ?>" type="number" min="1" max="50" name="yy_dmm_auto_post_settings[max_posts]" value="<?php echo esc_attr( $settings['max_posts'] ); ?>" <?php disabled( ! empty( $settings['max_posts_all'] ), true ); ?>>
+				<label class="yy-dmm-inline-checkbox" for="<?php echo esc_attr( $all_id ); ?>">
+					<input type="hidden" name="yy_dmm_auto_post_settings[max_posts_all]" value="0">
+					<input id="<?php echo esc_attr( $all_id ); ?>" type="checkbox" name="yy_dmm_auto_post_settings[max_posts_all]" value="1" <?php checked( ! empty( $settings['max_posts_all'] ), true ); ?>>
+					すべて投稿する
+				</label>
 			</td>
 		</tr>
 		<?php

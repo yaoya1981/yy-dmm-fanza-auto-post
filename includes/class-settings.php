@@ -18,6 +18,7 @@ class YY_DMM_Auto_Post_Settings {
 		return array(
 			'api_id'             => '',
 			'affiliate_id'       => '',
+			'post_affiliate_id'  => '',
 			'site'               => 'FANZA',
 			'service'            => 'digital',
 			'floor'              => 'videoc',
@@ -33,6 +34,9 @@ class YY_DMM_Auto_Post_Settings {
 			'show_sample_image_continue_button' => 0,
 			'sample_image_continue_button_text' => '続きを見る',
 			'title_template'     => '{title}｜{label}',
+			'affiliate_button_text_top' => '公式ページを見る',
+			'affiliate_button_text_middle' => '公式ページを見る',
+			'affiliate_button_text_bottom' => '公式ページを見る',
 			'body_sections'      => array(
 				'sample_movie'        => 1,
 				'top_affiliate_button'=> 1,
@@ -43,13 +47,13 @@ class YY_DMM_Auto_Post_Settings {
 				'bottom_affiliate_button' => 1,
 			),
 			'body_section_order' => array(
-				'sample_movie'        => 1,
-				'top_affiliate_button'=> 2,
-				'product_info'        => 3,
-				'description'         => 4,
-				'middle_affiliate_button' => 5,
-				'sample_images'       => 6,
-				'bottom_affiliate_button' => 7,
+				'sample_movie'        => 10,
+				'top_affiliate_button'=> 20,
+				'product_info'        => 30,
+				'description'         => 40,
+				'middle_affiliate_button' => 50,
+				'sample_images'       => 60,
+				'bottom_affiliate_button' => 70,
 			),
 			'product_info_fields' => array(
 				'title'      => 1,
@@ -69,23 +73,26 @@ class YY_DMM_Auto_Post_Settings {
 				'product_url' => 1,
 			),
 			'product_info_field_order' => array(
-				'title'      => 1,
-				'product_id' => 2,
-				'content_id' => 3,
-				'service'    => 4,
-				'floor'      => 5,
-				'category_name' => 6,
-				'maker'      => 7,
-				'label'      => 8,
-				'genres'     => 9,
-				'date'       => 10,
-				'volume'     => 11,
-				'price'      => 12,
-				'list_price' => 13,
-				'delivery_prices' => 14,
-				'product_url' => 15,
+				'title'      => 10,
+				'product_id' => 20,
+				'content_id' => 30,
+				'service'    => 40,
+				'floor'      => 50,
+				'category_name' => 60,
+				'maker'      => 70,
+				'label'      => 80,
+				'genres'     => 90,
+				'date'       => 100,
+				'volume'     => 110,
+				'price'      => 120,
+				'list_price' => 130,
+				'delivery_prices' => 140,
+				'product_url' => 150,
 			),
 			'product_info_link_terms' => 1,
+			'product_info_product_url_label' => '商品ページ',
+			'product_info_product_url_link_text' => '商品ページを見る',
+			'product_info_product_url_button' => 0,
 			'parent_category_id' => 0,
 			'create_categories'  => 1,
 			'create_parent_categories' => 0,
@@ -118,6 +125,7 @@ class YY_DMM_Auto_Post_Settings {
 				'label'    => 0,
 			),
 			'max_posts'          => 1,
+			'max_posts_all'      => 0,
 			'prevent_duplicates' => 1,
 			'enable_cron'        => 0,
 			'cron_interval'      => 'daily',
@@ -181,6 +189,7 @@ class YY_DMM_Auto_Post_Settings {
 
 		$settings['api_id']       = sanitize_text_field( $input['api_id'] ?? '' );
 		$settings['affiliate_id'] = sanitize_text_field( $input['affiliate_id'] ?? '' );
+		$settings['post_affiliate_id'] = sanitize_text_field( $input['post_affiliate_id'] ?? '' );
 		$settings['site']         = sanitize_text_field( $input['site'] ?? 'FANZA' );
 		$settings['service']      = sanitize_key( $input['service'] ?? 'digital' );
 		$settings['floor']        = sanitize_key( $input['floor'] ?? 'videoc' );
@@ -211,6 +220,13 @@ class YY_DMM_Auto_Post_Settings {
 		if ( '' === trim( $settings['title_template'] ) ) {
 			$settings['title_template'] = '{title}｜{label}';
 		}
+		foreach ( array( 'top', 'middle', 'bottom' ) as $position ) {
+			$key = 'affiliate_button_text_' . $position;
+			$settings[ $key ] = sanitize_text_field( $input[ $key ] ?? $settings[ $key ] );
+			if ( '' === trim( $settings[ $key ] ) ) {
+				$settings[ $key ] = '公式ページを見る';
+			}
+		}
 
 		$settings['body_sections'] = self::sanitize_boolean_map(
 			$input['body_sections'] ?? array(),
@@ -231,6 +247,15 @@ class YY_DMM_Auto_Post_Settings {
 			$settings['product_info_field_order']
 		);
 		$settings['product_info_link_terms'] = ! empty( $input['product_info_link_terms'] ) ? 1 : 0;
+		$settings['product_info_product_url_label'] = sanitize_text_field( $input['product_info_product_url_label'] ?? '商品ページ' );
+		if ( '' === trim( $settings['product_info_product_url_label'] ) ) {
+			$settings['product_info_product_url_label'] = '商品ページ';
+		}
+		$settings['product_info_product_url_link_text'] = sanitize_text_field( $input['product_info_product_url_link_text'] ?? '商品ページを見る' );
+		if ( '' === trim( $settings['product_info_product_url_link_text'] ) ) {
+			$settings['product_info_product_url_link_text'] = '商品ページを見る';
+		}
+		$settings['product_info_product_url_button'] = ! empty( $input['product_info_product_url_button'] ) ? 1 : 0;
 
 		$settings['parent_category_id'] = absint( $input['parent_category_id'] ?? 0 );
 		$settings['create_categories']  = ! empty( $input['create_categories'] ) ? 1 : 0;
@@ -254,6 +279,7 @@ class YY_DMM_Auto_Post_Settings {
 		$settings['category_iteminfo_keys'] = self::sanitize_iteminfo_keys( $input['category_iteminfo_keys'] ?? array() );
 		$settings['tag_iteminfo_keys']      = self::sanitize_iteminfo_keys( $input['tag_iteminfo_keys'] ?? array() );
 		$settings['max_posts']          = max( 1, min( 50, absint( $input['max_posts'] ?? 1 ) ) );
+		$settings['max_posts_all']      = ! empty( $input['max_posts_all'] ) ? 1 : 0;
 		$settings['prevent_duplicates'] = ! empty( $input['prevent_duplicates'] ) ? 1 : 0;
 		$settings['enable_cron']        = ! empty( $input['enable_cron'] ) ? 1 : 0;
 
@@ -357,7 +383,7 @@ class YY_DMM_Auto_Post_Settings {
 
 		$clean = array();
 		foreach ( $sorted_keys as $index => $key ) {
-			$clean[ $key ] = $index + 1;
+			$clean[ $key ] = ( $index + 1 ) * 10;
 		}
 
 		return $clean;

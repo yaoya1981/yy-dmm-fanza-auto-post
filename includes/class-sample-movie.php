@@ -53,12 +53,12 @@ class YY_DMM_Auto_Post_Sample_Movie {
 			return '';
 		}
 
-		list( $width, $height ) = self::extract_size( $url );
+		$size      = self::extract_size( $url );
+		$max_width = max( 1, absint( $size[0] ?? 1280 ) );
 
 		return sprintf(
-			'<div class="yy-dmm-sample-movie" style="margin:0 0 24px;"><div style="max-width:900px;margin:0 auto;aspect-ratio:%1$d / %2$d;"><iframe src="%3$s" loading="lazy" scrolling="no" frameborder="0" allow="fullscreen; encrypted-media; picture-in-picture" allowfullscreen style="display:block;width:100%%;height:100%%;border:0;"></iframe></div></div>',
-			$width,
-			$height,
+			'<div class="yy-dmm-sample-movie" style="margin:0 0 24px;"><div style="width:100%%;max-width:%1$dpx;margin:0 auto;padding-top:75%%;position:relative;"><iframe width="100%%" height="100%%" src="%2$s" loading="lazy" scrolling="no" frameborder="0" allow="fullscreen; encrypted-media; picture-in-picture" allowfullscreen style="position:absolute;top:0;left:0;display:block;width:100%%;height:100%%;border:0;"></iframe></div></div>',
+			$max_width,
 			esc_url( $url )
 		);
 	}

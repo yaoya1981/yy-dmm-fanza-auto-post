@@ -67,6 +67,11 @@
 	flex: 0 0 auto;
 }
 
+.yy-dmm-inline-checkbox {
+	display: inline-block;
+	margin-left: 16px;
+}
+
 .yy-dmm-taxonomy-note {
 	background: #fff;
 	border-left: 4px solid #72aee6;
@@ -161,6 +166,47 @@
 	background: #fcf0f1;
 }
 
+.yy-dmm-api-test-form {
+	margin-top: 16px;
+}
+
+.yy-dmm-api-test-result {
+	margin-top: 20px;
+	max-width: 1280px;
+}
+
+.yy-dmm-api-test-summary {
+	margin-bottom: 16px;
+	max-width: 620px;
+}
+
+.yy-dmm-api-test-summary th {
+	width: 160px;
+}
+
+.yy-dmm-api-test-table th,
+.yy-dmm-api-test-table td {
+	vertical-align: top;
+}
+
+.yy-dmm-api-test-table th:first-child,
+.yy-dmm-api-test-table td:first-child {
+	width: 56px;
+}
+
+.yy-dmm-api-test-table pre {
+	background: #1d2327;
+	color: #f0f0f1;
+	font-size: 12px;
+	line-height: 1.45;
+	margin: 0;
+	max-height: 260px;
+	max-width: 520px;
+	overflow: auto;
+	padding: 8px 10px;
+	white-space: pre-wrap;
+}
+
 @media screen and (max-width: 782px) {
 	.yy-dmm-token-grid {
 		grid-template-columns: 1fr;
@@ -187,6 +233,7 @@
 
 .yy-dmm-order-table th:first-child,
 .yy-dmm-order-table td:first-child {
+	padding-left: 20px;
 	width: 70px;
 }
 
@@ -197,6 +244,57 @@
 
 .yy-dmm-run-form {
 	margin-top: 20px;
+}
+
+.yy-dmm-realtime-log {
+	background: #fff;
+	border: 1px solid #dcdcde;
+	margin-top: 18px;
+	max-width: 1080px;
+	padding: 14px 16px;
+}
+
+.yy-dmm-realtime-log h2 {
+	margin: 0 0 12px;
+}
+
+.yy-dmm-progress-summary {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px 16px;
+	margin-bottom: 12px;
+}
+
+.yy-dmm-progress-lines {
+	background: #1d2327;
+	color: #f0f0f1;
+	font-family: Consolas, Monaco, monospace;
+	font-size: 12px;
+	line-height: 1.5;
+	list-style: none;
+	margin: 0;
+	max-height: 360px;
+	overflow: auto;
+	padding: 10px 12px;
+}
+
+.yy-dmm-progress-line {
+	border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+	margin: 0;
+	padding: 4px 0;
+	white-space: pre-wrap;
+}
+
+.yy-dmm-progress-line-success {
+	color: #68de7c;
+}
+
+.yy-dmm-progress-line-warning {
+	color: #f0c36d;
+}
+
+.yy-dmm-progress-line-error {
+	color: #ff8085;
 }
 
 .yy-dmm-log-table td {

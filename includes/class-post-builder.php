@@ -25,6 +25,17 @@ class YY_DMM_Auto_Post_Post_Builder {
 		$title = trim( preg_replace( '/\s+/', ' ', $title ) );
 		$title = trim( $title, " \t\n\r\0\x0B|-:：/｜" );
 
+		$safe_title = $this->replace_template_tokens( $template, $item );
+		$safe_title = preg_replace( '/\s+/u', ' ', (string) $safe_title );
+		if ( null === $safe_title ) {
+			$safe_title = '';
+		}
+		$safe_title = preg_replace( '/^[\s\|\-:：｜]+|[\s\|\-:：｜]+$/u', '', trim( $safe_title ) );
+		if ( null === $safe_title ) {
+			$safe_title = '';
+		}
+		$title = $safe_title;
+
 		return '' !== $title ? sanitize_text_field( $title ) : $this->get_base_title( $item );
 	}
 
@@ -55,7 +66,7 @@ class YY_DMM_Auto_Post_Post_Builder {
 		$product_info_term_links = is_array( $product_info_term_links ) ? $product_info_term_links : array();
 		$title            = $this->get_base_title( $item );
 		$content_id       = $this->get_content_id( $item );
-		$affiliate_url    = isset( $item['affiliateURL'] ) ? esc_url_raw( $item['affiliateURL'] ) : '';
+		$affiliate_url    = self::apply_post_affiliate_id( $item['affiliateURL'] ?? '', $this->settings );
 		$sample_movie_url = $this->extract_sample_movie_url( $item );
 		$sample_image_size = isset( $this->settings['sample_image_size'] ) ? sanitize_key( $this->settings['sample_image_size'] ) : 'sample_l';
 		$sample_image_max = isset( $this->settings['sample_image_max'] ) ? absint( $this->settings['sample_image_max'] ) : 0;
@@ -87,8 +98,16 @@ class YY_DMM_Auto_Post_Post_Builder {
 			'affiliate_url'     => $affiliate_url,
 			'sample_movie_url'  => $sample_movie_url,
 			'sample_image_urls' => $sample_images,
+			'affiliate_button_texts' => array(
+				'top_affiliate_button' => $this->normalize_setting_text( 'affiliate_button_text_top', '公式ページを見る' ),
+				'middle_affiliate_button' => $this->normalize_setting_text( 'affiliate_button_text_middle', '公式ページを見る' ),
+				'bottom_affiliate_button' => $this->normalize_setting_text( 'affiliate_button_text_bottom', '公式ページを見る' ),
+			),
 			'show_sample_image_continue_button' => ! empty( $this->settings['show_sample_image_continue_button'] ) ? 1 : 0,
 			'sample_image_continue_button_text' => sanitize_text_field( $this->settings['sample_image_continue_button_text'] ?? '' ),
+			'product_info_product_url_label' => $this->normalize_setting_text( 'product_info_product_url_label', '商品ページ' ),
+			'product_info_product_url_link_text' => $this->normalize_setting_text( 'product_info_product_url_link_text', '商品ページを見る' ),
+			'product_info_product_url_button' => ! empty( $this->settings['product_info_product_url_button'] ) ? 1 : 0,
 			'description'       => (string) $description,
 			'genres'            => $genres,
 			'genre_items'       => self::build_linked_iteminfo_values( $genres, $product_info_term_links['genre'] ?? array() ),
@@ -107,6 +126,38 @@ class YY_DMM_Auto_Post_Post_Builder {
 			'product_info_field_order' => wp_parse_args( $product_info_field_order, $defaults['product_info_field_order'] ),
 			'item'              => is_array( $item ) ? $item : array(),
 		);
+	}
+
+	private function normalize_setting_text( $key, $default ) {
+		$value = sanitize_text_field( $this->settings[ $key ] ?? $default );
+		return '' !== trim( $value ) ? $value : $default;
+	}
+
+	public static function apply_post_affiliate_id( $url, $settings ) {
+		$url = esc_url_raw( (string) $url );
+		if ( '' === $url ) {
+			return '';
+		}
+
+		$settings = is_array( $settings ) ? $settings : array();
+		$post_affiliate_id = sanitize_text_field( $settings['post_affiliate_id'] ?? '' );
+		if ( '' === trim( $post_affiliate_id ) ) {
+			return $url;
+		}
+
+		$parts = wp_parse_url( $url );
+		if ( empty( $parts['host'] ) ) {
+			return $url;
+		}
+
+		$query = array();
+		if ( ! empty( $parts['query'] ) ) {
+			wp_parse_str( $parts['query'], $query );
+		}
+		$query_key = array_key_exists( 'affiliate_id', $query ) && ! array_key_exists( 'af_id', $query ) ? 'affiliate_id' : 'af_id';
+
+		$url = remove_query_arg( array( 'af_id', 'affiliate_id' ), $url );
+		return esc_url_raw( add_query_arg( $query_key, $post_affiliate_id, $url ) );
 	}
 
 	private function replace_template_tokens( $template, $item ) {

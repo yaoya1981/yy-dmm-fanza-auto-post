@@ -24,8 +24,13 @@ class YY_DMM_Auto_Post_Post_Manager {
 			return new WP_Error( 'yy_dmm_post_missing_content_id', 'content_idがないため投稿できません。' );
 		}
 
+		$post_title = $this->get_safe_post_title( $item, $content_id );
+		if ( '' === $post_title ) {
+			return new WP_Error( 'yy_dmm_post_missing_title', sprintf( '投稿タイトルが空のため投稿しません。content_id: %s', $content_id ) );
+		}
+
 		$post_data = array(
-			'post_title'   => $this->builder->get_wp_title( $item ),
+			'post_title'   => $post_title,
 			'post_content' => $content,
 			'post_status'  => $this->settings['post_status'],
 		);
@@ -51,6 +56,20 @@ class YY_DMM_Auto_Post_Post_Manager {
 		$this->save_post_data( $post_id, $item, $content_id, $featured_media_id );
 
 		return absint( $post_id );
+	}
+
+	private function get_safe_post_title( $item, $content_id ) {
+		$title = trim( (string) $this->builder->get_wp_title( $item ) );
+		if ( '' !== $title ) {
+			return sanitize_text_field( $title );
+		}
+
+		$api_title = isset( $item['title'] ) ? trim( sanitize_text_field( (string) $item['title'] ) ) : '';
+		if ( '' !== $api_title ) {
+			return $api_title;
+		}
+
+		return sanitize_text_field( (string) $content_id );
 	}
 
 	public function prepare_product_info_term_links( $item ) {
@@ -94,8 +113,9 @@ class YY_DMM_Auto_Post_Post_Manager {
 	}
 
 	private function save_post_data( $post_id, $item, $content_id, $featured_media_id ) {
+		$affiliate_url = YY_DMM_Auto_Post_Post_Builder::apply_post_affiliate_id( $item['affiliateURL'] ?? '', $this->settings );
 		update_post_meta( $post_id, '_yy_dmm_content_id', $content_id );
-		update_post_meta( $post_id, '_yy_dmm_affiliate_url', esc_url_raw( $item['affiliateURL'] ?? '' ) );
+		update_post_meta( $post_id, '_yy_dmm_affiliate_url', $affiliate_url );
 		update_post_meta( $post_id, '_yy_dmm_product_url', esc_url_raw( $item['URL'] ?? '' ) );
 
 		if ( $featured_media_id ) {

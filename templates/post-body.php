@@ -19,13 +19,14 @@ $yy_dmm_render_info_items = static function ( $items ) {
 	echo wp_kses_post( implode( ' / ', $parts ) );
 };
 
-$yy_dmm_render_url = static function ( $url, $label ) {
+$yy_dmm_render_url = static function ( $url, $label, $button = false ) {
 	$url = esc_url( $url );
 	if ( '' === $url ) {
 		return;
 	}
 
-	printf( '<a href="%s" target="_blank" rel="noopener noreferrer">%s</a>', $url, esc_html( $label ) );
+	$style = $button ? ' style="display:inline-block;padding:10px 18px;background:#d63638;color:#fff;text-decoration:none;border-radius:4px;font-weight:700;"' : '';
+	printf( '<a href="%s" target="_blank" rel="noopener noreferrer"%s>%s</a>', $url, $style, esc_html( $label ) );
 };
 
 $yy_dmm_render_text_list = static function ( $items ) {
@@ -72,7 +73,7 @@ usort(
 		<?php echo YY_DMM_Auto_Post_Sample_Movie::build_shortcode( $sample_movie_url ); ?>
 	<?php elseif ( in_array( $body_section_key, array( 'top_affiliate_button', 'middle_affiliate_button', 'bottom_affiliate_button' ), true ) && ! empty( $affiliate_url ) ) : ?>
 		<p class="yy-dmm-affiliate-button" style="text-align:center;margin:24px 0;">
-			<a href="<?php echo esc_url( $affiliate_url ); ?>" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:12px 22px;background:#d63638;color:#fff;text-decoration:none;border-radius:4px;font-weight:700;">公式ページを見る</a>
+			<a href="<?php echo esc_url( $affiliate_url ); ?>" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:12px 22px;background:#d63638;color:#fff;text-decoration:none;border-radius:4px;font-weight:700;"><?php echo esc_html( $affiliate_button_texts[ $body_section_key ] ?? '公式ページを見る' ); ?></a>
 		</p>
 	<?php elseif ( 'product_info' === $body_section_key ) : ?>
 		<table class="yy-dmm-product-info" style="width:100%;border-collapse:collapse;margin:24px 0;">
@@ -149,8 +150,8 @@ usort(
 						</tr>
 					<?php elseif ( 'product_url' === $field_key && ! empty( $affiliate_url ) ) : ?>
 						<tr>
-							<th style="padding:10px;border:1px solid #ddd;text-align:left;background:#f6f7f7;">商品ページ</th>
-							<td style="padding:10px;border:1px solid #ddd;"><?php $yy_dmm_render_url( $affiliate_url, '商品ページを見る' ); ?></td>
+							<th style="padding:10px;border:1px solid #ddd;text-align:left;background:#f6f7f7;"><?php echo esc_html( $product_info_product_url_label ); ?></th>
+							<td style="padding:10px;border:1px solid #ddd;"><?php $yy_dmm_render_url( $affiliate_url, $product_info_product_url_link_text, ! empty( $product_info_product_url_button ) ); ?></td>
 						</tr>
 					<?php elseif ( 'genres' === $field_key && ! empty( $genre_items ) ) : ?>
 						<tr>
