@@ -707,6 +707,7 @@ class YY_DMM_Auto_Post_Admin {
 			<h2>本文設定</h2>
 			<table class="form-table" role="presentation">
 				<?php $this->ordered_checkbox_group_row( '表示する項目', 'body_sections', 'body_section_order', $settings['body_sections'], $settings['body_section_order'], $this->body_section_labels() ); ?>
+				<?php $this->checkbox_row( '商品説明文を取得する', 'fetch_description', $settings['fetch_description'], 'OFFの場合は商品ページへの追加アクセスを行わないため、手動投稿が軽くなります。' ); ?>
 				<?php $this->text_row( '公式ボタン1のテキスト', 'affiliate_button_text_top', $settings['affiliate_button_text_top'], '公式ページを見る' ); ?>
 				<?php $this->text_row( '公式ボタン2のテキスト', 'affiliate_button_text_middle', $settings['affiliate_button_text_middle'], '公式ページを見る' ); ?>
 				<?php $this->text_row( '公式ボタン3のテキスト', 'affiliate_button_text_bottom', $settings['affiliate_button_text_bottom'], '公式ページを見る' ); ?>
@@ -734,6 +735,7 @@ class YY_DMM_Auto_Post_Admin {
 
 			<h2>アイキャッチ設定</h2>
 			<table class="form-table" role="presentation">
+				<?php $this->checkbox_row( 'アイキャッチ画像を保存する', 'save_featured_image', $settings['save_featured_image'], 'OFFの場合は画像ダウンロードとサムネイル生成を行わないため、手動投稿が軽くなります。' ); ?>
 				<?php $this->select_row( 'アイキャッチ画像', 'featured_image_source', $settings['featured_image_source'], $this->featured_image_source_labels() ); ?>
 			</table>
 
