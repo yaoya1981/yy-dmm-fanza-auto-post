@@ -57,7 +57,7 @@ class YY_DMM_Auto_Post_Media {
 		require_once ABSPATH . 'wp-admin/includes/media.php';
 		require_once ABSPATH . 'wp-admin/includes/image.php';
 
-		$tmp = download_url( $url, 30 );
+		$tmp = download_url( $url, 12 );
 		if ( is_wp_error( $tmp ) ) {
 			return $tmp;
 		}

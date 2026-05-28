@@ -15,8 +15,8 @@ class YY_DMM_Auto_Post_Scraper {
 		$response = wp_remote_get(
 			sprintf( self::DETAIL_URL, rawurlencode( $content_id ) ),
 			array(
-				'timeout'     => 20,
-				'redirection' => 5,
+				'timeout'     => 8,
+				'redirection' => 3,
 				'headers'     => array(
 					'Cookie'     => 'age_check_done=1; cklg=ja',
 					'User-Agent' => 'Mozilla/5.0 (WordPress; DMM/FANZA Auto Post)',

@@ -174,33 +174,53 @@ class YY_DMM_Auto_Post_Plugin {
 			}
 
 			$description = '';
-			$scrape = $scraper->fetch_description( $content_id );
-			if ( is_wp_error( $scrape ) ) {
-				$result['errors'][] = sprintf( '%s: %s', $content_id, $scrape->get_error_message() );
+			if ( $this->should_fetch_description( $settings ) ) {
+				$scrape = $scraper->fetch_description( $content_id );
+				if ( is_wp_error( $scrape ) ) {
+					$result['errors'][] = sprintf( '%s: %s', $content_id, $scrape->get_error_message() );
+					$emit_progress(
+						array(
+							'status'  => 'running',
+							'level'   => 'warning',
+							'message' => sprintf( '%s: 説明文の取得に失敗しました: %s', $content_id, $scrape->get_error_message() ),
+						)
+					);
+				} else {
+					$description = (string) $scrape;
+				}
+			} else {
 				$emit_progress(
 					array(
 						'status'  => 'running',
-						'level'   => 'warning',
-						'message' => sprintf( '%s: 説明文の取得に失敗しました: %s', $content_id, $scrape->get_error_message() ),
+						'level'   => 'info',
+						'message' => sprintf( '%s: 説明文取得をスキップしました。', $content_id ),
 					)
 				);
-			} else {
-				$description = (string) $scrape;
 			}
 
 			$featured_media_id = 0;
-			$attachment_id = $media->get_or_sideload_featured( $item );
-			if ( is_wp_error( $attachment_id ) ) {
-				$result['errors'][] = sprintf( '%s: %s', $content_id, $attachment_id->get_error_message() );
+			if ( $this->should_save_featured_image( $settings ) ) {
+				$attachment_id = $media->get_or_sideload_featured( $item );
+				if ( is_wp_error( $attachment_id ) ) {
+					$result['errors'][] = sprintf( '%s: %s', $content_id, $attachment_id->get_error_message() );
+					$emit_progress(
+						array(
+							'status'  => 'running',
+							'level'   => 'warning',
+							'message' => sprintf( '%s: アイキャッチ取得に失敗しました: %s', $content_id, $attachment_id->get_error_message() ),
+						)
+					);
+				} else {
+					$featured_media_id = absint( $attachment_id );
+				}
+			} else {
 				$emit_progress(
 					array(
 						'status'  => 'running',
-						'level'   => 'warning',
-						'message' => sprintf( '%s: アイキャッチ取得に失敗しました: %s', $content_id, $attachment_id->get_error_message() ),
+						'level'   => 'info',
+						'message' => sprintf( '%s: アイキャッチ保存をスキップしました。', $content_id ),
 					)
 				);
-			} else {
-				$featured_media_id = absint( $attachment_id );
 			}
 
 			$product_info_term_links = $manager->prepare_product_info_term_links( $item );
@@ -418,33 +438,53 @@ class YY_DMM_Auto_Post_Plugin {
 					);
 				} else {
 					$description = '';
-					$scrape = $scraper->fetch_description( $content_id );
-					if ( is_wp_error( $scrape ) ) {
-						$result['errors'][] = sprintf( '%s: %s', $content_id, $scrape->get_error_message() );
+					if ( $this->should_fetch_description( $settings ) ) {
+						$scrape = $scraper->fetch_description( $content_id );
+						if ( is_wp_error( $scrape ) ) {
+							$result['errors'][] = sprintf( '%s: %s', $content_id, $scrape->get_error_message() );
+							$emit_progress(
+								array(
+									'status'  => 'running',
+									'level'   => 'warning',
+									'message' => sprintf( '%s: 説明文の取得に失敗しました: %s', $content_id, $scrape->get_error_message() ),
+								)
+							);
+						} else {
+							$description = (string) $scrape;
+						}
+					} else {
 						$emit_progress(
 							array(
 								'status'  => 'running',
-								'level'   => 'warning',
-								'message' => sprintf( '%s: 説明文の取得に失敗しました: %s', $content_id, $scrape->get_error_message() ),
+								'level'   => 'info',
+								'message' => sprintf( '%s: 説明文取得をスキップしました。', $content_id ),
 							)
 						);
-					} else {
-						$description = (string) $scrape;
 					}
 
 					$featured_media_id = 0;
-					$attachment_id = $media->get_or_sideload_featured( $item );
-					if ( is_wp_error( $attachment_id ) ) {
-						$result['errors'][] = sprintf( '%s: %s', $content_id, $attachment_id->get_error_message() );
+					if ( $this->should_save_featured_image( $settings ) ) {
+						$attachment_id = $media->get_or_sideload_featured( $item );
+						if ( is_wp_error( $attachment_id ) ) {
+							$result['errors'][] = sprintf( '%s: %s', $content_id, $attachment_id->get_error_message() );
+							$emit_progress(
+								array(
+									'status'  => 'running',
+									'level'   => 'warning',
+									'message' => sprintf( '%s: アイキャッチ取得に失敗しました: %s', $content_id, $attachment_id->get_error_message() ),
+								)
+							);
+						} else {
+							$featured_media_id = absint( $attachment_id );
+						}
+					} else {
 						$emit_progress(
 							array(
 								'status'  => 'running',
-								'level'   => 'warning',
-								'message' => sprintf( '%s: アイキャッチ取得に失敗しました: %s', $content_id, $attachment_id->get_error_message() ),
+								'level'   => 'info',
+								'message' => sprintf( '%s: アイキャッチ保存をスキップしました。', $content_id ),
 							)
 						);
-					} else {
-						$featured_media_id = absint( $attachment_id );
 					}
 
 					$product_info_term_links = $manager->prepare_product_info_term_links( $item );
@@ -487,6 +527,23 @@ class YY_DMM_Auto_Post_Plugin {
 		}
 
 		return $state;
+	}
+
+	private function should_fetch_description( $settings ) {
+		if ( empty( $settings['fetch_description'] ) ) {
+			return false;
+		}
+
+		$sections = isset( $settings['body_sections'] ) && is_array( $settings['body_sections'] ) ? $settings['body_sections'] : array();
+		if ( array_key_exists( 'description', $sections ) && empty( $sections['description'] ) ) {
+			return false;
+		}
+
+		return true;
+	}
+
+	private function should_save_featured_image( $settings ) {
+		return ! empty( $settings['save_featured_image'] );
 	}
 
 	private function finish_import_state( $state, $result, $emit_progress ) {
